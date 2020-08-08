@@ -1,0 +1,6 @@
+
+% RUN this to init the server with script 1.
+erl
+c(script).
+script:script1().
+gen_server:cast(<0.99.0>,{nodeLocations, [1,2,3]}).
