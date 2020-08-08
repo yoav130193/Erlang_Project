@@ -71,8 +71,8 @@ handle_call({addNode, root}, _From, {RootList, NodeList, RootCount}) ->
 handle_cast({message, {From, To, Msg}}, Data) ->
   RootList = ets:tab2list(rootList),
   buildNetwork(RootList),
-  From !
-  sendLocations(RootList, Locations),
+  From ! {message, To, Msg},
+%  sendLocations(RootList, Locations),
   {noreply, Data};
 
 %***************    CALLS FROM Nodes    *************%
@@ -99,8 +99,15 @@ code_change(_OldVsn, _State, _Extra) ->
 
 %******************   Utils Functions   ************
 
+% Send all locations to a List of Nodes
 sendLocations([], Locations) -> [];
 sendLocations(NodeList, Locations) ->
   io:format("server sends to: ~p~n ", [element(1, element(1, hd(NodeList)))]),
   element(1, element(1, hd(NodeList))) ! {locations, Locations},
   sendLocations(tl(NodeList), Locations).
+
+
+% Send all the root to start build its DODAGs
+buildNetwork(RootList) ->
+  element(1, element(1, hd(RootList))) ! {buildNetwork},
+  erlang:error(not_implemented).
