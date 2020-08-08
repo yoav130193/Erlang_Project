@@ -4,9 +4,9 @@
 %%% @doc
 %%%
 %%% @end
-%%% Created : 08. Aug 2020 3:26 PM
+%%% Created : 08. Aug 2020 3:29 PM
 %%%-------------------------------------------------------------------
--module('GraphicsServer').
+-module('app').
 -author("amir").
 
 %% API
