@@ -33,10 +33,13 @@ start_link() -> gen_server:start_link(?MODULE, [], []).
 init(Data) ->
   process_flag(trap_exit, true),
   io:format("myserver init~n"),
-  ets:new(nodeList, [set, named_table]),
-  ets:new(rootList, [set, named_table]),
+  ets:new(nodeList, [set, named_table, public]),
+  ets:new(rootList, [set, named_table, public]),
+  NodeCount = 1,
   RootCount = 1,
-  {ok, {[], [], RootCount}}.
+  random:seed(1),
+  RandomLocationList = [random:uniform(200) || _ <- lists:seq(1, 50)],
+  {ok, {NodeCount, RootCount, RandomLocationList}}.
 
 
 %*****************   CALLS FROM GUI    ***************%
@@ -45,21 +48,21 @@ init(Data) ->
 
 % Call from the GUI - addition of a new node
 % Return to the GUI the Pid of the new node
-handle_call({addNode, normal}, _From, {RootList, NodeList, RootCount}) ->
+handle_call({addNode, normal}, _From, {NodeCount, RootCount, RandomLocationList}) ->
   io:format("myserver wants to add a normal node~n"),
   {Pid, Ref} = spawn_monitor(nodeLoop, loopStart, []),
-  NewData = {RootList, [{Pid, {Ref, 0, 0}} | NodeList], RootCount},
-  ets:insert(nodeList, {Pid, {Ref, 0, 0}}),
+  ets:insert(nodeList, {Pid, {Ref, hd(RandomLocationList), hd(tl(RandomLocationList))}}),
+  NewData = {NodeCount + 1, RootCount, tl(tl(RandomLocationList))},
   {reply, Pid, NewData};
 
 % CALL from the GUI - to add a root node
 % Return to the GUI the Pid of the new node
-handle_call({addNode, root}, _From, {RootList, NodeList, RootCount}) ->
+handle_call({addNode, root}, _From, {NodeCount, RootCount, RandomLocationList}) ->
   io:format("myserver wants to add a root node~n"),
   {Pid, Ref} = spawn_monitor(rootLoop, loopStart, [RootCount]),
-  NewData = {[{Pid, {Ref, 0, 0}} | RootList], [{Pid, {Ref, 0, 0}} | NodeList], RootCount + 1},
-  ets:insert(nodeList, {Pid, {Ref, 0, 0}}),
-  ets:insert(rootList, {Pid, {Ref, 0, 0}}),
+  ets:insert(nodeList, {Pid, {Ref, hd(RandomLocationList), hd(tl(RandomLocationList))}}),
+  ets:insert(rootList, {Pid, {Ref, hd(RandomLocationList), hd(tl(RandomLocationList))}}),
+  NewData = {NodeCount + 1, RootCount + 1, tl(tl(RandomLocationList))},
   {reply, Pid, NewData}.
 
 %*** Nodes Locations ***%
@@ -71,7 +74,7 @@ handle_call({addNode, root}, _From, {RootList, NodeList, RootCount}) ->
 handle_cast({message, {From, To, Msg}}, Data) ->
   RootList = ets:tab2list(rootList),
   buildNetwork(RootList),
-  From ! {message, To, Msg},
+  %From ! {message, To, Msg},
 %  sendLocations(RootList, Locations),
   {noreply, Data};
 
@@ -107,7 +110,8 @@ sendLocations(NodeList, Locations) ->
   sendLocations(tl(NodeList), Locations).
 
 
-% Send all the root to start build its DODAGs
+% Send to all the roots to start build its DODAGs
 buildNetwork(RootList) ->
-  element(1, element(1, hd(RootList))) ! {buildNetwork},
-  erlang:error(not_implemented).
+  lists:foreach(fun(Element) -> element(1, Element) ! {buildNetwork} end, RootList).
+
+
