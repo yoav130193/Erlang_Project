@@ -19,6 +19,8 @@ script1() ->
   addMultipleNodes(ServerPid, normal, 5),
   checkLists().
 
+test() ->
+  1.
 
 startAll() ->
   io:format("compile all files and start server~n"),
