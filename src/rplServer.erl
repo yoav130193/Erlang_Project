@@ -6,7 +6,7 @@
 %%% @end
 %%% Created : 04. Aug 2020 11:18
 %%%-------------------------------------------------------------------
--module(myServer).
+-module(rplServer).
 -author("yoavlevy").
 -behavior(gen_server).
 %% API
@@ -24,17 +24,27 @@
 % {rootPid,ref, X, Y}
 -type rootList() :: [{rootPid, ref, float, float}].
 
+-define(LOG_FILE_NAME, "my_log_file.txt").
+-define(VERSION_RANK, version_rank).
+
+
 start_link() -> gen_server:start_link(?MODULE, [], []).
 
 
 %*****************   Initialization    ***************%
 
 % Initialize all information to start the program
-init(Data) ->
+init(Mop) ->
+  % FOR DEBUG ONLY
+  {ok, S} = file:open(?LOG_FILE_NAME, [append]),
+  io:format(S, "~s~n", ["{DODAG_ID,Message Type,From,To}"]),
+
   process_flag(trap_exit, true),
   io:format("myserver init~n"),
   ets:new(nodeList, [set, named_table, public]),
   ets:new(rootList, [set, named_table, public]),
+  ets:new(mop, [set, named_table, public]),
+  ets:insert(mop, {mopKey, Mop}),
   NodeCount = 1,
   RootCount = 1,
   random:seed(1),
@@ -50,10 +60,10 @@ init(Data) ->
 % Return to the GUI the Pid of the new node
 handle_call({addNode, normal}, _From, {NodeCount, RootCount, RandomLocationList}) ->
   io:format("myserver wants to add a normal node~n"),
-  {Pid, Ref} = spawn_monitor(nodeLoop, loopStart, []),
+  {Pid, Ref} = spawn_monitor(nodeLoop, loopStart, [NodeCount]),
   ets:insert(nodeList, {Pid, {Ref, hd(RandomLocationList), hd(tl(RandomLocationList))}}),
   NewData = {NodeCount + 1, RootCount, tl(tl(RandomLocationList))},
-  {reply, Pid, NewData};
+  {reply, {Pid, Ref}, NewData};
 
 % CALL from the GUI - to add a root node
 % Return to the GUI the Pid of the new node
@@ -63,9 +73,20 @@ handle_call({addNode, root}, _From, {NodeCount, RootCount, RandomLocationList}) 
   ets:insert(nodeList, {Pid, {Ref, hd(RandomLocationList), hd(tl(RandomLocationList))}}),
   ets:insert(rootList, {Pid, {Ref, hd(RandomLocationList), hd(tl(RandomLocationList))}}),
   NewData = {NodeCount + 1, RootCount + 1, tl(tl(RandomLocationList))},
-  {reply, Pid, NewData}.
+  {reply, {Pid, Ref}, NewData}.
 
 %*** Nodes Locations ***%
+
+% CAST from the GUI - request to send message from node A -> B
+% no reply to the GUI
+% server sends to all the roots to start building the network
+% After the network is ready -> try send a message
+handle_cast({buildNetwork}, Data) ->
+  RootList = ets:tab2list(rootList),
+  buildNetwork(RootList),
+  %From ! {message, To, Msg},
+%  sendLocations(RootList, Locations),
+  {noreply, Data};
 
 % CAST from the GUI - request to send message from node A -> B
 % no reply to the GUI

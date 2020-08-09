@@ -11,7 +11,7 @@
 
 %% API
 -export([startAll/0, addNode/2, checkLists/0, script1/0, addMultipleNodes/3, randommmmm/0]).
--define(SERVER, myServer).
+-define(SERVER, rplServer).
 
 script1() ->
   {_, ServerPid} = startAll(),
@@ -20,17 +20,16 @@ script1() ->
   addMultipleNodes(ServerPid, normal, 5),
   checkLists().
 
-
 startAll() ->
   io:format("compile all files and start server~n"),
   compileAll(),
-
-  gen_server:start_link({local, ?SERVER}, ?SERVER, [], []).
+  gen_server:start_link({local, ?SERVER}, ?SERVER, [1], []).
 
 compileAll() ->
-  compile:file(myServer),
+  compile:file(rplServer),
   compile:file(rootLoop),
   compile:file(nodeLoop),
+  compile:file(rpl_msg),
   compile:file(utils).
 
 addNode(Server_Pid, root) ->

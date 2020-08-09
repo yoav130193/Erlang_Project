@@ -10,14 +10,49 @@
 -author("yoavlevy").
 
 %% API
--export([loop/0, loopStart/0]).
+-export([loopStart/1]).
 
-loopStart() ->
+
+-record(dioMsg, {rplInstanceId, versionNumber, rank, g = 2#1, zero = 2#0, mop, prf = 2#000, dtsn, flags = 16#00, reserved = 16#00, dodagId}).
+-record(daoMsg, {rplInstanceId, k = 2#1, d = 2#1, flags = 8#00, reserved = 16#00, daoSequence, dodagId}).
+-record(daoAckMsg, {rplInstanceId, d = 2#1, reserved = 2#0000000, daoSequence, status = 16#01, dodagId}).
+
+-define(VERSION_RANK, version_rank).
+-define(PARENT, parent).
+
+loopStart(NodeCount) ->
   io:format("new node :)~n"),
-  loop().
+  Mop = element(2, hd(ets:lookup(mop, mopKey))),
+  loop(NodeCount, Mop).
 
-loop() ->
+loop(NodeCount, Mop) ->
   receive
-    {locations, {NodeList, X_List, Y_List}} ->
-      io:format("node: got locations~n ", [])
+  % Got DIO msg -> send a DAO message to join the DODAG
+    {dioMsg, From, DioMsg} ->
+      UpdateNeeded = utils:checkIfUpdateNeeded(DioMsg#dioMsg.dodagId, DioMsg#dioMsg.versionNumber, DioMsg#dioMsg.rank + 1, From),
+      if
+        UpdateNeeded =:= true -> % Update rank and version -> send back DAO message
+          put({?VERSION_RANK, DioMsg#dioMsg.dodagId}, {DioMsg#dioMsg.versionNumber, DioMsg#dioMsg.rank + 1}),
+          rpl_msg:sendDaoAfterDio(self(), From, DioMsg#dioMsg.dodagId);
+        true -> rpl_msg:noNeedToUpdateToFile(self(), From, DioMsg#dioMsg.dodagId)
+      end,
+      loop(NodeCount, Mop);
+
+%TODO - HALF implemented! Think if need to send to the root message
+  %Got Dao message from a node that got DIO -> root/other needs to send dao-ack back
+    {daoMsg, From, DaoMsg} ->
+      rpl_msg:sendDaoAckAfterDao(self(), From, DaoMsg#daoMsg.dodagId),
+      loop(NodeCount, Mop);
+
+  % Got From ack on his DAO message, Distribute the network
+    {daoAckMsg, From, DaoAckMsg} ->
+      put({?PARENT, DaoAckMsg#daoAckMsg.dodagId}, From), % Update Parent
+      {Version, Rank} = get({?VERSION_RANK, DaoAckMsg#daoAckMsg.dodagId}),
+      {MyNode, Neighbors} = utils:findMeAndNeighbors(self()),
+      io:format("node number: ~p Continue To Build,~n From : ~p~n~n", [NodeCount, MyNode]),
+      rpl_msg:sendDioToNeighbors(self(), DaoAckMsg#daoAckMsg.dodagId, Rank, Version, Mop, Neighbors),
+      % rpl_msg:sendDioToNeighbors(),
+      loop(NodeCount, Mop)
+
   end.
+
