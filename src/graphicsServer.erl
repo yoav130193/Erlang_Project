@@ -13,6 +13,7 @@
 
 
 -import(util,[integer_to_atom/1]).
+-import(funcGenerator,[generateSin/2,generatePolynom/2]).
 -export([start/1, init/1, terminate/2, code_change/3,
   handle_info/2, handle_call/3, handle_cast/2, handle_event/2, handle_sync_event/3, atom_to_string/1,start_global/1]).
 -compile(export_all).
@@ -30,7 +31,7 @@
 
 -record(state,{appState,newRootBtn,movementList,nodeTypetoCreate,newNodeBtn,sendMsg,moveType,quit,
   node_list_q_1,node_list_q_2,node_list_q_3,node_list_q_4,panel,size,frame,
-  protocolServer,msgTextBox,mode,node,id,locationList,msg}).
+  protocolServer,msgTextBox,mode,node,id,locationList,msg,numOfNodes,numOfRoots}).
 
 
 
@@ -57,15 +58,17 @@ handle_sync_event(#wx{event=#wxPaint{}}, _, State ) ->
 %%create root event
 handle_event(#wx{obj = NewRootBtn, event = #wxCommand{type = command_button_clicked}},
     State = #state{frame = Frame,newRootBtn = NewRootBtn}) ->
-
+  NewState = create(root,State),
+  {noreply,NewState};
 %%create node event
-  handle_event(#wx{obj = NewNodeBtn, event = #wxCommand{type = command_button_clicked}},
-  State = #state{frame = Frame,newNodeBtn = NewNodeBtn}) ->
-io:format("Got Event ~n"),
-{noreply,State};
+handle_event(#wx{obj = NewNodeBtn, event = #wxCommand{type = command_button_clicked}},
+    State = #state{frame = Frame,newNodeBtn = NewNodeBtn}) ->
+  io:format("Got Event ~n"),
+  {noreply,State};
+
 handle_event(_Ev = #wx{}, State = #state{}) ->
-io:format("Got Event test ~n"),
-{noreply, State}.
+  io:format("Got Event test ~n"),
+  {noreply, State}.
 
 %% Callbacks handled as normal gen_server callbacks
 handle_info(Msg, State) ->
@@ -231,7 +234,8 @@ init_layout(Mode,Node) ->
     frame = Frame, panel = Panel, newRootBtn = NewRootBtn, newNodeBtn = NewNodeBtn, quit = QuitBtn, sendMsg = SendMsgBtn,
     node_list_q_1 = Node_list_q_1, node_list_q_2 = Node_list_q_2, node_list_q_3 = Node_list_q_3,node_list_q_4 = Node_list_q_4,
     movementList = Frame, moveType = "", nodeTypetoCreate = "", size = ?MapSize, protocolServer = "",
-    appState = initiated, msgTextBox = Frame, mode = Mode, node = Node, msg = MessageTextBox
+    appState = initiated, msgTextBox = Frame, mode = Mode, node = Node, msg = MessageTextBox,
+    numOfNodes = 0, numOfRoots = 0
   }.
 
 createRoot(State) -> io:format("create root ~n").
@@ -242,3 +246,18 @@ newMessage(State) -> io:format("new message ~n").
 quit(State) -> io:format("quit ~n").
 
 drawSim(State) -> 1.
+
+
+create(root, State = #state{moveType = MoveType,locationList = LocationList,numOfRoots = NumOfRoots})  ->
+  case MoveType of
+    "Random" -> Func = random;
+    "Polynomial" -> Func = funcGenerator:generatePolynom(rand:uniform(10),[]);
+    "Sinusodial" -> Func = funcGenerator:generateSin(rand:uniform(10),[]);
+    _ -> 1
+  end,
+  NewLocList = [{NumOfRoots,Func,{0,0}} | LocationList],
+  NewState = State#state{locationList = NewLocList,numOfRoots = NumOfRoots + 1},
+  gen_server:call(?rplServer, {addNode, root});
+  {createRoot_OK,NewState}.
+
+%create(node, MoveType, State) -> 1.
