@@ -6,7 +6,7 @@
 %%% @end
 %%% Created : 08. Aug 2020 3:55 PM
 %%%-------------------------------------------------------------------
--module(graphicsServer).
+-module(gfx_server).
 -author("amir").
 
 -behaviour(wx_object).
