@@ -10,11 +10,12 @@
 -author("yoavlevy").
 
 %% API
--export([startAll/0, addNode/2, checkLists/0, script1/0, addMultipleNodes/3]).
+-export([startAll/0, addNode/2, checkLists/0, script1/0, addMultipleNodes/3, randommmmm/0]).
+-define(SERVER, myServer).
 
 script1() ->
   {_, ServerPid} = startAll(),
-  io:format("My Server Pid: ~p~n",[ServerPid]),
+  io:format("My Server Pid: ~p~n", [ServerPid]),
   addMultipleNodes(ServerPid, root, 2),
   addMultipleNodes(ServerPid, normal, 5),
   checkLists().
@@ -22,11 +23,15 @@ script1() ->
 
 startAll() ->
   io:format("compile all files and start server~n"),
+  compileAll(),
+
+  gen_server:start_link({local, ?SERVER}, ?SERVER, [], []).
+
+compileAll() ->
   compile:file(myServer),
   compile:file(rootLoop),
   compile:file(nodeLoop),
-  gen_server:start_link(myServer, [], []).
-
+  compile:file(utils).
 
 addNode(Server_Pid, root) ->
   gen_server:call(Server_Pid, {addNode, root});
@@ -43,4 +48,9 @@ addMultipleNodes(Server_Pid, Which, N) ->
 checkLists() ->
   io:format("root List: ~p~n", [ets:tab2list(rootList)]),
   io:format("node List: ~p~n", [ets:tab2list(nodeList)]).
+
+
+randommmmm() ->
+  random:seed(1),
+  [random:uniform(1000) || _ <- lists:seq(1, 50)].
 
