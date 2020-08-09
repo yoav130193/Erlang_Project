@@ -29,25 +29,10 @@
 -define(max_y,(1024)).
 
 -record(state,{appState,newRootBtn,movementList,nodeTypetoCreate,newNodeBtn,sendMsg,moveType,quit,
-  node_list_q_1,node_list_q_2,node_list_q_3,node_list_q_4,panel,size,frame,protocolServer,msgTextBox,mode,node}).
+  node_list_q_1,node_list_q_2,node_list_q_3,node_list_q_4,panel,size,frame,
+  protocolServer,msgTextBox,mode,node,id,locationList,msg}).
 
 
-%%-record(state,
-%%{masterRem,
-%%memberRem,
-%%clearAllBtn,
-%%masterCre,
-%%memberCre,
-%%dronesList,
-%%goToBtn,
-%%gatherBtn,
-%%mapChooser,
-%%speedBtn,
-%%currID,
-%%dronesLocs,
-%%panel,
-%%size
-%%, frame, goTo, back, target, vel, speedEdit, currMap, obs, hoverBtn, followBtn, drawDrones, memDrone, masDrone, masDroneBit, memDroneBit, send_drone, in_follow, mode, appNode, node}).
 
 start_global(Node) ->
   wx_object:start_link({local,?SERVER},?MODULE,[global,Node],[]).
@@ -58,7 +43,9 @@ start(Node) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 init([Mode,Node]) ->
+  %InitState = init_test(Mode,Node),
   InitState = init_layout(Mode,Node),
+  io:format("done init ~n"),
   {InitState#state.frame,InitState}.
 
 
@@ -67,18 +54,18 @@ init([Mode,Node]) ->
 handle_sync_event(#wx{event=#wxPaint{}}, _, State ) ->
   drawSim(State).
 
-%%map choose event
-handle_event(#wx{event = #wxCommand{type = command_button_clicked},userData = UserData},State = #state{frame =  Frame}) ->
-  case UserData of
-    newRoot -> createRoot(State);
-    newNode -> createNode(State);
-    newMsg  -> newMessage(State);
-    quit    -> quit(State)
-  end;
+%%create root event
+handle_event(#wx{obj = NewRootBtn, event = #wxCommand{type = command_button_clicked}},
+    State = #state{frame = Frame,newRootBtn = NewRootBtn}) ->
 
+%%create node event
+  handle_event(#wx{obj = NewNodeBtn, event = #wxCommand{type = command_button_clicked}},
+  State = #state{frame = Frame,newNodeBtn = NewNodeBtn}) ->
+io:format("Got Event ~n"),
+{noreply,State};
 handle_event(_Ev = #wx{}, State = #state{}) ->
-  io:format("Got Event ~n"),
-  {noreply, State}.
+io:format("Got Event test ~n"),
+{noreply, State}.
 
 %% Callbacks handled as normal gen_server callbacks
 handle_info(Msg, State) ->
@@ -156,33 +143,15 @@ drawTarget(_,_) -> ok.
 init_layout(Mode,Node) ->
   Wx = wx:new(),
   Frame = wxFrame:new(Wx,-1,"RPL Simulation"),
+  Panel = wxPanel:new(Frame,[{size,{?MapSize,?MapSize}},{style,?wxFULL_REPAINT_ON_RESIZE}]),
   MainSizer = wxBoxSizer:new(?wxHORIZONTAL),
   ControlSizer = wxBoxSizer:new(?wxVERTICAL),
-  ListSizer_one = wxBoxSizer:new(?wxHORIZONTAL),
-  ListSizer_two = wxBoxSizer:new(?wxHORIZONTAL),
-  ListLabel_one = wxBoxSizer:new(?wxHORIZONTAL),
-  ListLabel_two = wxBoxSizer:new(?wxHORIZONTAL),
-  List_Label_Combiner = wxBoxSizer:new(?wxVERTICAL), MsgSizer = wxBoxSizer:new(?wxHORIZONTAL),
-  ExitSizer= wxBoxSizer:new(?wxVERTICAL),
-  Size = ?MapSize,
-  Panel = wxPanel:new(Frame,[{size, {Size, Size}},{style,?wxFULL_REPAINT_ON_RESIZE}]),
-%{size,{Size,Size}}
-
-  %% mover type
-  MovementLabel = wxStaticText:new(Frame,?wxID_ANY,"Movement type",[{size,{-1,-1}},{style,?wxALIGN_LEFT}]),
-  wxStaticText:wrap(MovementLabel,-1),
-  Choices = ["","Random","Polynomial","sinusoidal"],
-  MovementChooser = wxComboBox:new(Frame, length(Choices), [{choices, Choices}]),
-  wxComboBox:setToolTip(MovementChooser, "Movement Type"),
-
-  %% buttons
-  CreateSizer = wxBoxSizer:new(?wxHORIZONTAL),
-  NewRootBtn  = wxButton:new(Frame,?wxID_ANY,[{label,"Create Root"}]),
-  %wxButton:disable(NewRootBtn),
-  NewNodeBtn  = wxButton:new(Frame,?wxID_ANY,[{label,"Create Node"}]),
-  %wxButton:disable(NewNodeBtn),
-  SendMsgBtn  = wxButton:new(Frame,?wxID_ANY,[{label,"Send Message"}]),
-  %wxButton:disable(SendMsgBtn),
+  SzFlags = [{proportion, 0}, {border, 4}, {flag, ?wxALL}],
+  %% create all UI elements %%
+  NewRootBtn = wxButton:new(Frame,?wxID_ANY,[{label,"Create Root"}]),
+  NewNodeBtn = wxButton:new(Frame,?wxID_ANY,[{label,"Create Node"}]),
+  QuitBtn    = wxButton:new(Frame,?wxID_ANY,[{label,"Quit"}]),
+  SendMsgBtn = wxButton:new(Frame,?wxID_ANY,[{label,"Send Message"}]),
   List_Q_1_Label = wxStaticText:new(Frame,?wxID_ANY,"Q.1",[{size,{-1,-1}},{style,?wxALIGN_LEFT}]),
   List_Q_2_Label = wxStaticText:new(Frame,?wxID_ANY,"Q.2",[{size,{-1,-1}},{style,?wxALIGN_LEFT}]),
   List_Q_3_Label = wxStaticText:new(Frame,?wxID_ANY,"Q.3",[{size,{-1,-1}},{style,?wxALIGN_LEFT}]),
@@ -191,60 +160,54 @@ init_layout(Mode,Node) ->
   Node_list_q_2 = wxListBox:new(Frame, ?wxID_ANY, [{size, {50,100}}, {choices, []}, {style, ?wxLB_SINGLE}]),
   Node_list_q_3 = wxListBox:new(Frame, ?wxID_ANY, [{size, {50,100}}, {choices, []}, {style, ?wxLB_SINGLE}]),
   Node_list_q_4 = wxListBox:new(Frame, ?wxID_ANY, [{size, {50,100}}, {choices, []}, {style, ?wxLB_SINGLE}]),
-  QuitBtn  = wxButton:new(Frame,?wxID_ANY,[{label,"Quit"}]),
-  %wxButton:disable(QuitBtn),
-  %%SizerText = wxStaticBoxSizer:new(?wxVERTICAL, Panel, [{label, "wxTextCtrl multiline"}]),
   MessageTextBox = wxTextCtrl:new(Frame, ?wxID_ANY, [{size, {100,100}},{value, "~Message Data~"}, {style, ?wxDEFAULT bor ?wxTE_MULTILINE}]),
-  %%wxSizer:add(MsgSizer, MessageTextBox,  [{flag, ?wxEXPAND}]),
-  %wxSizer:addSpacer(MainSizer, 10),
+  MovementLabel = wxStaticText:new(Frame,?wxID_ANY,"Movement type",[{size,{-1,-1}},{style,?wxALIGN_LEFT}]),
+  wxStaticText:wrap(MovementLabel,-1),
+  Choices = ["","Random","Polynomial","sinusoidal"],
+  MovementChooser = wxComboBox:new(Frame, length(Choices), [{choices, Choices}]),
+  wxComboBox:setToolTip(MovementChooser, "Movement Type"),
 
-  wxSizer:addSpacer(ListLabel_one,10),
-  wxSizer:add(ListLabel_one, List_Q_1_Label , [{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
-  wxSizer:addSpacer(ListLabel_one,30),
-  wxSizer:add(ListLabel_one, List_Q_2_Label , [{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
-  wxSizer:addSpacer(ListLabel_two,10),
-  wxSizer:add(ListLabel_two, List_Q_3_Label , [{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
-  wxSizer:addSpacer(ListLabel_two,30),
-  wxSizer:add(ListLabel_two, List_Q_4_Label , [{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
-
-
-
-  wxSizer:add(CreateSizer, NewRootBtn , [{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
-  wxSizer:add(CreateSizer, NewNodeBtn , [{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
-  wxSizer:add(CreateSizer, MessageTextBox , [{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
-  wxSizer:add(CreateSizer, SendMsgBtn , [{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
-  wxSizer:add(List_Label_Combiner,ListLabel_one,[{flag,?wxALL},{border,5}]),
-  wxSizer:add(ListSizer_one, Node_list_q_1, [{flag,?wxALL bor ?wxEXPAND}, {border,5}]),
-  wxSizer:add(ListSizer_one, Node_list_q_2, [{flag,?wxALL bor ?wxEXPAND}, {border,5}]),
-  wxSizer:add(List_Label_Combiner,ListSizer_one,[{flag,?wxALL},{border,5}]),
-  wxSizer:add(List_Label_Combiner,ListLabel_two,[{flag,?wxALL},{border,5}]),
-  wxSizer:add(ListSizer_two, Node_list_q_3, [{flag,?wxALL bor ?wxEXPAND}, {border,5}]),
-  wxSizer:add(ListSizer_two, Node_list_q_4, [{flag,?wxALL bor ?wxEXPAND}, {border,5}]),
-  wxSizer:add(List_Label_Combiner,ListSizer_two,[{flag,?wxALL},{border,5}]),
-  wxSizer:add(CreateSizer, QuitBtn, [{flag, ?wxEXPAND}]),
-  wxSizer:add(ControlSizer,MovementLabel,[{flag,?wxALL},{border,5}]),
-  wxSizer:add(ControlSizer,MovementChooser,[{flag,?wxALL},{border,5}]),
-  wxSizer:add(ControlSizer,NewRootBtn,[{flag,?wxALL},{border,5}]),
-  wxSizer:add(ControlSizer,NewNodeBtn,[{flag,?wxALL},{border,5}]),
-  wxSizer:add(ControlSizer,MessageTextBox, [{flag,?wxALL}, {border,5}]),
-  wxSizer:add(ControlSizer,SendMsgBtn, [{flag,?wxALL}, {border,5}]),
-  %wxSizer:add(ControlSizer,Node_list_q_1,[{flag,?wxALL}]),
-  %wxSizer:add(ControlSizer,Node_list_q_2,[{flag,?wxALL}]),
-  %wxSizer:add(ControlSizer,Node_list_q_3,[{flag,?wxALL}]),
-  %wxSizer:add(ControlSizer,Node_list_q_4,[{flag,?wxALL}]),
-  wxSizer:add(ControlSizer,List_Label_Combiner,[{flag,?wxALL},{border,5},{proportion,5}]),
-  %wxSizer:add(ControlSizer,ListSizer_two,[{flag,?wxALL},{border,5}]),
-  wxSizer:add(ControlSizer,QuitBtn,[{flag,?wxALL},{border,5}]),
-
-
-  wxSizer:add(MainSizer,ControlSizer,[{flag,?wxALL},{border,5}]),
-  % wxSizer:add(MainSizer,ListSizer,[{flag,?wxALL},{border,5}]),
-  wxSizer:add(MainSizer,ExitSizer,[{flag,?wxALL},{border,5}]),
-  wxSizer:add(MainSizer,Panel,[{flag,?wxALL},{border,5}]),
-  wxSizer:add(ControlSizer, MsgSizer, [{flag, ?wxEXPAND}, {proportion, 1}]),
+  %% order UI elements in sizers %%
+  %% create UI sizers %%
+  CreateSizer = wxBoxSizer:new(?wxVERTICAL),
+  wxSizer:add(CreateSizer,MovementLabel,[{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
+  wxSizer:add(CreateSizer,MovementChooser,[{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
+  wxSizer:add(CreateSizer,NewRootBtn,[{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
+  wxSizer:add(CreateSizer,NewNodeBtn,[{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
+  %% create QUEUE sizers %%
+  QueueSizer = wxBoxSizer:new(?wxHORIZONTAL),
+  ListSizer = wxBoxSizer:new(?wxHORIZONTAL),
+  ListLabelSizer = wxBoxSizer:new(?wxHORIZONTAL),
+  ListLabelCombiner = wxBoxSizer:new(?wxVERTICAL),
+  wxBoxSizer:add(ListLabelSizer,List_Q_1_Label,[{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
+  wxBoxSizer:add(ListLabelSizer,List_Q_2_Label,[{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
+  wxBoxSizer:add(ListLabelSizer,List_Q_3_Label,[{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
+  wxBoxSizer:add(ListLabelSizer,List_Q_4_Label,[{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
+  wxBoxSizer:add(ListSizer,Node_list_q_1,[{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
+  wxBoxSizer:add(ListSizer,Node_list_q_2,[{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
+  wxBoxSizer:add(ListSizer,Node_list_q_3,[{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
+  wxBoxSizer:add(ListSizer,Node_list_q_4,[{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
+  wxBoxSizer:add(ListLabelCombiner,ListLabelSizer,[{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
+  wxBoxSizer:add(ListLabelCombiner,ListSizer,[{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
+  wxBoxSizer:add(QueueSizer,ListLabelCombiner),[{flag, ?wxEXPAND bor ?wxALL},{border,5}],
+  %% send message sizers %%
+  MessageSizer = wxBoxSizer:new(?wxVERTICAL),
+  wxBoxSizer:add(MessageSizer,MessageTextBox,[{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
+  wxBoxSizer:add(MessageSizer,SendMsgBtn,[{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
+  %% quit sizer %%
+  QuitSizer = wxBoxSizer:new(?wxVERTICAL),
+  wxBoxSizer:add(QuitSizer,QuitBtn,[{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
+  %% put all sizers together %%
+  wxBoxSizer:add(ControlSizer,CreateSizer,[{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
+  wxBoxSizer:add(ControlSizer,MessageSizer,[{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
+  wxBoxSizer:add(ControlSizer,QueueSizer,[{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
+  wxBoxSizer:add(ControlSizer,QuitSizer,[{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
+  wxBoxSizer:add(MainSizer,ControlSizer,[{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
+  wxBoxSizer:add(MainSizer,Panel,[{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
   wxWindow:setSizer(Frame, MainSizer),
   wxSizer:setSizeHints(MainSizer,Frame),
   wxWindow:setMinSize(Frame,wxWindow:getSize(Frame)),
+  %% connect all elements %%
   wxFrame:connect(Frame,close_window),
   wxButton:connect(NewRootBtn,command_button_clicked),
   wxButton:connect(NewNodeBtn,command_button_clicked),
@@ -255,73 +218,27 @@ init_layout(Mode,Node) ->
   wxListBox:connect(Node_list_q_4,command_listbox_selected),
   wxComboBox:connect(MovementChooser, command_combobox_selected),
   wxButton:connect(QuitBtn,command_button_clicked),
+  %% config ui for start of run %%
+  %wxButton:disable(SendMsgBtn),
+  %wxButton:disable(NewNodeBtn),
+  %wxButton:disable(NewRootBtn),
+  %% show frame %%
   wxPanel:connect(Panel, left_down),
   wxPanel:connect(Panel, paint, [callback]),
   wxFrame:show(Frame),
-
-%%  SendMsgBtn  = wxButton:new(Frame,?wxID_ANY,[{label,"New Message"}]),
-%%  QuitBtn     = wxButton:new(Frame,?wxID_ANY,[{label,"Quit"}]),
-%%
-%%
-  %%wxSizer:add(ControlSizer,MovementChooser,[{flag,?wxALL},{border,5}]),
-%%  wxSizer:add(CreateSizer, SendMsgBtn, [{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
-%%  wxSizer:add(CreateSizer, QuitBtn   , [{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
-%%
-%%  %% List Of Nodes
-
-%%  ListSizer = wxBoxSizer:new(?wxHORIZONTAL),
-%%  wxSizer:add(ListSizer, Node_list_q_1, [{proportion,1}, {flag,?wxALL bor ?wxEXPAND}, {border,5}]),
-%%  wxSizer:add(ListSizer, Node_list_q_2, [{proportion,1}, {flag,?wxALL bor ?wxEXPAND}, {border,5}]),
-%%  wxSizer:add(ListSizer, Node_list_q_3, [{proportion,1}, {flag,?wxALL bor ?wxEXPAND}, {border,5}]),
-%%  wxSizer:add(ListSizer, Node_list_q_4, [{proportion,1}, {flag,?wxALL bor ?wxEXPAND}, {border,5}]),
-%%  %% Nessage textBox
-%%  SizerText = wxStaticBoxSizer:new(?wxVERTICAL, Panel, [{label, "wxTextCtrl multiline"}]),
-%%  MessageTextBox = wxTextCtrl:new(Panel, 3, [{value, "This is a\nmultiline\nwxTextCtrl"}, {style, ?wxDEFAULT bor ?wxTE_MULTILINE}]),
-%%  %% Add to sizers
-%%  wxSizer:add(SizerText, MessageTextBox,  [{flag, ?wxEXPAND}]),
-%%  wxSizer:addSpacer(MainSizer, 10),
-%%   wxSizer:add(CreateSizer, NewRootBtn, [{flag, ?wxEXPAND bor ?wxALL},{border,5}]),
-%%  wxSizer:add(MainSizer, SizerText, [{flag, ?wxEXPAND}, {proportion, 1}]),
-%%  wxPanel:setSizer(Panel, MainSizer),
-%%  %% General configurations
-%%  wxSizer:add(MainSizer,ControlSizer,[{flag,?wxALL},{border,5}]),
-%%  wxSizer:add(MainSizer,Panel,[{flag,?wxALL},{border,5}]),
-%%  wxWindow:setSizer(Frame, MainSizer),
-%%  wxSizer:setSizeHints(MainSizer,Frame),
-%%  wxWindow:setMinSize(Frame,wxWindow:getSize(Frame)),
-%%  wxFrame:connect(Frame,close_window),
-
-%%  wxButton:connect(SendMsgBtn,command_button_clicked),
-%%  wxButton:connect(QuitBtn,command_button_clicked),
-%%  wxListBox:connect(Node_list_q_1,command_listbox_selected),
-%%  wxListBox:connect(Node_list_q_2,command_listbox_selected),
-%%  wxListBox:connect(Node_list_q_3,command_listbox_selected),
-%%  wxListBox:connect(Node_list_q_4,command_listbox_selected),
-%%  wxTextCtrl:connect(MessageTextBox, command_text_enter),
   #state
   {
-    frame = Frame, panel = Panel, newRootBtn = NewRootBtn, newNodeBtn = NewNodeBtn, quit = Frame, sendMsg = Frame, node_list_q_1 = Frame,
-    node_list_q_2 = Frame, node_list_q_3 = Frame,node_list_q_4 = Frame, movementList = Frame, moveType = "",
-    nodeTypetoCreate = "", size = Size, protocolServer = "", appState = initiated, msgTextBox = Frame, mode = Mode, node = Node
+    frame = Frame, panel = Panel, newRootBtn = NewRootBtn, newNodeBtn = NewNodeBtn, quit = QuitBtn, sendMsg = SendMsgBtn,
+    node_list_q_1 = Node_list_q_1, node_list_q_2 = Node_list_q_2, node_list_q_3 = Node_list_q_3,node_list_q_4 = Node_list_q_4,
+    movementList = Frame, moveType = "", nodeTypetoCreate = "", size = ?MapSize, protocolServer = "",
+    appState = initiated, msgTextBox = Frame, mode = Mode, node = Node, msg = MessageTextBox
   }.
 
+createRoot(State) -> io:format("create root ~n").
+createNode(State) -> io:format("create node ~n").
 
+newMessage(State) -> io:format("new message ~n").
 
-%#state
-%{
-%frame = Frame, panel = Panel, newRootBtn = NewRootBtn, newNodeBtn = NewNodeBtn, quit = QuitBtn, sendMsg = SendMsgBtn, node_list_q_1 = Node_list_q_1,
-%node_list_q_2 = Node_list_q_2, node_list_q_3 = Node_list_q_3,node_list_q_4 = Node_list_q_4, movementList = MovementChooser, moveType = "",
-%%nodeTypetoCreate = "", size = Size, protocolServer = "", appState = initiated, msgTextBox = MessageTextBox, mode = Mode, node = Node
-%}.
-
-
-
-
-createRoot(State) -> 1.
-createNode(State) -> 1.
-
-newMessage(State) -> 1.
-
-quit(State) -> 1.
+quit(State) -> io:format("quit ~n").
 
 drawSim(State) -> 1.
