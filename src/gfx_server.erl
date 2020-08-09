@@ -248,16 +248,17 @@ quit(State) -> io:format("quit ~n").
 drawSim(State) -> 1.
 
 
-create(root, State = #state{moveType = MoveType,locationList = LocationList,numOfRoots = NumOfRoots})  ->
-  case MoveType of
-    "Random" -> Func = random;
-    "Polynomial" -> Func = funcGenerator:generatePolynom(rand:uniform(10),[]);
-    "Sinusodial" -> Func = funcGenerator:generateSin(rand:uniform(10),[]);
-    _ -> 1
-  end,
+create(root, State = #state{locationList = LocationList,numOfRoots = NumOfRoots})  ->
+  %MoveType = State#state.moveType,
+  Func = case State#state.moveType of
+           "Random" -> random;
+           "Polynomial" -> funcGenerator:generatePolynom(rand:uniform(10),[]);
+           "Sinusodial" -> funcGenerator:generateSin(rand:uniform(10),[]);
+           _ -> badArguement
+         end,
   NewLocList = [{NumOfRoots,Func,{0,0}} | LocationList],
   NewState = State#state{locationList = NewLocList,numOfRoots = NumOfRoots + 1},
-  gen_server:call(?rplServer, {addNode, root});
+  gen_server:call(rplServer, {addNode, root}),
   {createRoot_OK,NewState}.
 
 %create(node, MoveType, State) -> 1.
