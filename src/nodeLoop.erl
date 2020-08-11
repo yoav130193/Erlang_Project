@@ -26,6 +26,7 @@ loopStart(NodeCount) ->
   loop(NodeCount, Mop).
 
 loop(NodeCount, Mop) ->
+
   receive
   % Got DIO msg -> send a DAO message to join the DODAG
     {dioMsg, From, DioMsg} ->
@@ -39,8 +40,9 @@ loop(NodeCount, Mop) ->
       loop(NodeCount, Mop);
 
 %TODO - HALF implemented! Think if need to send to the root message
-  %Got Dao message from a node that got DIO -> root/other needs to send dao-ack back
+  %Got DAO message from a node that got DIO -> root/other needs to send dao-ack back
     {daoMsg, From, DaoMsg} ->
+      %utils:updateUpwardDigraph(self(), From, DaoMsg),
       rpl_msg:sendDaoAckAfterDao(self(), From, DaoMsg#daoMsg.dodagId),
       loop(NodeCount, Mop);
 
@@ -52,6 +54,17 @@ loop(NodeCount, Mop) ->
       io:format("node number: ~p Continue To Build,~n From : ~p~n~n", [NodeCount, MyNode]),
       rpl_msg:sendDioToNeighbors(self(), DaoAckMsg#daoAckMsg.dodagId, Rank, Version, Mop, Neighbors),
       % rpl_msg:sendDioToNeighbors(),
+      loop(NodeCount, Mop);
+
+    % Got a request for parents
+    {requestParent, From, DodagID} ->
+      case get({?PARENT, DodagID}) of
+        undefined -> % NEED TO UPDATE
+          io:format("requestParent, UNDEFIEND! DodagID: ~p node: ~p got from :~p~n", [DodagID, self(), From]);
+        Parent ->
+          io:format("requestParent, FIND! DodagID: ~pnode: ~p got from :~p Parent: ~p~n", [DodagID, self(), From, Parent]),
+          From ! {giveParent, DodagID, self(), Parent}
+      end,
       loop(NodeCount, Mop)
 
   end.

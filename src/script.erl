@@ -10,7 +10,8 @@
 -author("yoavlevy").
 
 %% API
--export([startAll/0, addNode/2, checkLists/0, script1/0, addMultipleNodes/3, randommmmm/0]).
+-export([startAll/0, addNode/2, checkLists/0, script1/0, addMultipleNodes/3, randommmmm/0, compileAll/0, startAllReal/0]).
+-import(gfx_server, [start/1]).
 -define(SERVER, rplServer).
 
 script1() ->
@@ -23,13 +24,24 @@ script1() ->
 startAll() ->
   io:format("compile all files and start server~n"),
   compileAll(),
-  gen_server:start_link({local, ?SERVER}, ?SERVER, [1], []).
+  rplServer:start_link(1).
+%gen_server:start_link({local, ?SERVER}, ?SERVER, [1], []).
+
+startAllReal() ->
+  io:format("compile all files and start server~n"),
+  compileAll(),
+  gen_server:start_link({local, ?SERVER}, ?SERVER, [1], []),
+  gfx_server:start(1).
 
 compileAll() ->
   compile:file(rplServer),
-  compile:file(rootLoop),
-  compile:file(nodeLoop),
+  compile:file(nodeServer),
+  compile:file(rootServer),
+  %compile:file(rootLoop),
+  %compile:file(nodeLoop),
   compile:file(rpl_msg),
+  compile:file(gfx_server),
+  compile:file(funcGenerator),
   compile:file(utils).
 
 addNode(Server_Pid, root) ->

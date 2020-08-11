@@ -10,7 +10,7 @@
 -author("yoavlevy").
 
 %% API
--export([sendDioToNeighbors/6, sendDaoAfterDio/3, sendDaoAckAfterDao/3, noNeedToUpdateToFile/3]).
+-export([sendDioToNeighbors/6, sendDaoAfterDio/4, sendDaoAckAfterDao/4, noNeedToUpdateToFile/3]).
 
 -define(LOG_FILE_NAME, "my_log_file.txt").
 -define(VERSION_RANK, version_rank).
@@ -32,7 +32,9 @@ sendDioToNeighbors(Pid, DodagId, Rank, Version, Mop, Neighbors) ->
   DioMsg = dioMsg(DodagId, Rank, Version, Mop),
   io:format("DODAG_ID: ~p ,DIO message from: ~p, sends to: ~p~nmsg: ~p~n~n", [DodagId, Pid, Neighbors, DioMsg]),
   saveDioToFile(self(), Neighbors, DodagId, Version, Rank),
-  lists:foreach(fun(Element) -> element(1, Element) ! {dioMsg, self(), DioMsg} end, Neighbors).
+  lists:foreach(fun(Element) -> gen_server:cast(element(1, Element), {dioMsg, self(), DioMsg})
+%element(1, Element) ! {dioMsg, self(), DioMsg}
+                end, Neighbors).
 
 % ***********   DAO MSG   ***********%
 
@@ -45,11 +47,12 @@ daoMsg(Dodag) ->
   %TODO - implement all of the following:
   #daoMsg{rplInstanceId = 0, daoSequence = 0, dodagId = Dodag}.
 
-sendDaoAfterDio(From, To, DodagId) ->
+sendDaoAfterDio(From, To, DodagId, State) ->
   DaoMsg = daoMsg(DodagId),
   io:format("DODAG_ID: ~p, DAO message from: ~p to: ~p~nmsg:~p~n~n", [DodagId, From, To, DaoMsg]),
   saveDaoToFile(From, To, DodagId),
-  To ! {daoMsg, From, DaoMsg}.
+  gen_server:cast(To, {daoMsg, From, DaoMsg}).
+%To ! {daoMsg, From, DaoMsg}.
 
 
 % ***********   DAO ACK MSG   ***********%
@@ -62,11 +65,13 @@ sendDaoAfterDio(From, To, DodagId) ->
 daoAckMsg(Dodag) ->
   #daoAckMsg{rplInstanceId = 0, daoSequence = 0, dodagId = Dodag}.
 
-sendDaoAckAfterDao(From, To, DodagId) ->
+sendDaoAckAfterDao(From, To, DodagId, State) ->
   DaoAckMsg = daoAckMsg(DodagId),
   io:format("DODAG_ID: ~p,DAO-ACK message from: ~p to: ~p~nmsg:~p~n~n", [DodagId, From, To, DaoAckMsg]),
   saveDaoAckToFile(From, To, DodagId),
-  To ! {daoAckMsg, From, DaoAckMsg}.
+  gen_server:cast(To, {daoAckMsg, From, DaoAckMsg}).
+%{reply, {daoAckMsg, From, DaoAckMsg}, State}.
+%To ! {daoAckMsg, From, DaoAckMsg}.
 
 
 %************   Save To a Log File    ************%

@@ -10,7 +10,7 @@
 -author("yoavlevy").
 
 %% API
--export([findMeAndNeighbors/1, findNeighbors/2, checkIfUpdateNeeded/4]).
+-export([findMeAndNeighbors/1, findNeighbors/2, checkIfUpdateNeeded/4, requestParent/3, buildVertexDigraph/1]).
 
 -define(dis, 100).
 -define(VERSION_RANK, version_rank).
@@ -42,8 +42,6 @@ calculateDistance({_, {_, X_Node_1, Y_Node_1}}, {_, {_, X_Node_2, Y_Node_2}}) ->
 % Got DIO message - check if the new message was sent from:
 % a better rank or a more advanced version
 checkIfUpdateNeeded(DodagId, NewVersion, NewRank, From) ->
-  {ok, S} = file:open(?LOG_FILE_NAME, [append]),
-  io:format(S, "~p Check update: DODAG_ID: ~p, NewVersion:~p, NewRank:~p From ~p~n", [self(), DodagId, NewVersion, NewRank, From]),
   case get({?VERSION_RANK, DodagId}) of
     undefined -> % NEED TO UPDATE
       true;
@@ -54,9 +52,6 @@ checkIfUpdateNeeded(DodagId, NewVersion, NewRank, From) ->
 
 % Compare new info vs previous info
 checkWithPrev(NewVersion, NewRank, PrevVersion, PrevRank, From, DodagId) ->
-  {ok, S} = file:open(?LOG_FILE_NAME, [append]),
-  io:format(S, "~p Continue Check update: DODAG_ID: ~p, From ~p, NewVersion:~p, NewRank:~p, PrevVersion:~p,PrevRank:~p  ~n", [self(), DodagId, From, NewVersion,
-    NewRank, PrevVersion, PrevRank]),
   if
     NewVersion > PrevVersion -> true; % update needed - new version
     true -> if
@@ -64,5 +59,20 @@ checkWithPrev(NewVersion, NewRank, PrevVersion, PrevRank, From, DodagId) ->
               true -> false % no update - same version, not better
             end
   end.
+
+%**************  BUILD DIGRAPH   **************%
+
+requestParent(From, DodagId, NodeList) ->
+  lists:foreach(fun(Element) ->
+    gen_server:cast(element(1, Element), {requestParent, From, DodagId})
+  %   element(1, Element) ! {requestParent, From, DodagId}
+                end, NodeList).
+
+% Add all the vertices to the Dodag, even the ones who aren't in the dodag
+buildVertexDigraph(NodeList) ->
+  Graph = digraph:new(),
+  %LABEL = {DODAG_ID}
+  lists:foreach(fun(Element) -> digraph:add_vertex(Graph, element(1, Element), {self()}) end, NodeList),
+  Graph.
 
 

@@ -1,8 +1,30 @@
 
+% FOR DEMO
+
 erl
 c(script).
+
 script:script1().
 
 gen_server:cast(rplServer,{buildNetwork}).
 
-%gen_server:cast(rplServer,{message, {1,2,"HEY"}}).
+gen_server:cast(rplServer,{downwardDigraphBuild}).
+
+% Check Existence of Path
+gen_server:cast(rplServer,{getAllPath}).
+
+gen_server:cast(rplServer,{message, {Pid1,Pid2,"HEY"}}).
+
+% FOR REAL
+
+erl
+c(script).
+script:compileAll().
+rr(gfx_server).
+script:startAllReal().
+
+script:startAll().
+
+
+
+

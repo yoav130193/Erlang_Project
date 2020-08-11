@@ -18,11 +18,15 @@
 
 -define(VERSION_RANK, version_rank).
 -define(PARENT, parent).
+-define(DOWNWARD_DIGRAPH, downwardDigraph).
+-define(DOWNWARD_DIGRAPH_FILE, "downward_digraph_file.txt").
+
 
 %Dictionaries
 % 1. key: {DodagID,rank_version}, value: {Version,Rank}
 % 2. key: {DodagID,parent},      value: {parentPid}
 % 3. key: {DodagID,children},        value: {childrenList}
+
 
 loopStart(RootCount) ->
   io:format("new root number: ~p~n ", [RootCount]),
@@ -55,7 +59,7 @@ loop(RootCount, Version, Mop) ->
   %TODO - HALF implemented! Think if need to send to an other root message
 %Got Dao message from a node that got DIO -> root needs to send dao-ack back, update the childrenList and upward digraph
     {daoMsg, From, DaoMsg} ->
-%utils:updateUpwardDigraph(self(), From, DaoMsg#daoMsg.dodagId),
+      % utils:updateUpwardDigraph(self(), From, DaoMsg),
       rpl_msg:sendDaoAckAfterDao(self(), From, DaoMsg#daoMsg.dodagId),
       loop(RootCount, Version, Mop);
 
@@ -68,6 +72,62 @@ loop(RootCount, Version, Mop) ->
       io:format("node number: ~p Continue To Build,~n From : ~p~n~n", [RootCount, MyNode]),
       rpl_msg:sendDioToNeighbors(self(), DaoAckMsg#daoAckMsg.dodagId, Rank, Version, Mop, Neighbors),
       % rpl_msg:sendDioToNeighbors(),
-      loop(RootCount, Version, Mop)
+      loop(RootCount, Version, Mop);
 
+
+  % 3 Messages for building the downward Digraph
+    {downwardDigraphBuild} ->
+      NodeList = ets:tab2list(nodeList),
+      put(?DOWNWARD_DIGRAPH, utils:buildVertexDigraph(NodeList)),
+      io:format("root number: ~p Starts Building Downward Digraph~n~n", [RootCount]),
+      % FROM,DODOAG, NodeList
+      utils:requestParent(self(), self(), NodeList),
+      loop(RootCount, Version, Mop);
+
+    {requestParent, From, DodagID} ->
+      case get({?PARENT, DodagID}) of
+        undefined -> % NEED TO UPDATE
+          true;
+        Parent -> From ! {giveParent, DodagID, self(), Parent}
+      end,
+      loop(RootCount, Version, Mop);
+
+
+    {giveParent, DodagID, From, Parent} ->
+      io:format("giveParent, DodagID: ~p myNode: ~p Child: ~p Parent: ~p~n", [DodagID, self(), From, Parent]),
+      DownwardDigraph = get(?DOWNWARD_DIGRAPH),
+      digraph:add_edge(DownwardDigraph, Parent, From),
+      put(?DOWNWARD_DIGRAPH, DownwardDigraph),
+      loop(RootCount, Version, Mop);
+
+    {sendMessage, {From, To, Msg}} ->
+
+      From;
+
+  %TODO - FOR DEBUG ONLY
+    {getAllPath} ->
+      NodeList = ets:tab2list(nodeList),
+      getAllPath(NodeList)
   end.
+
+
+%************     DEBUG FUNCTION    *************%
+
+
+% Prints each node all it's edges
+printAllEdges(NodeList) ->
+  {ok, S} = file:open(?DOWNWARD_DIGRAPH_FILE, [append]),
+  lists:foreach(fun(Element) ->
+    Edges = digraph:edges(get(?DOWNWARD_DIGRAPH), element(1, Element)),
+    io:format(S, "DODAG_ID: ~p , Vertix: ~p,  Edges: ~p~n", [self(), element(1, Element), Edges])
+                end, NodeList).
+
+% GET ALL THE PATH FROM EACH NODE TO EACH NODE
+getAllPath(NodeList) ->
+  {ok, S} = file:open(?DOWNWARD_DIGRAPH_FILE, [append]),
+  lists:foreach(fun(OutElement) ->
+    lists:foreach(fun(InElement) ->
+      Vertices = digraph:get_path(get(?DOWNWARD_DIGRAPH), element(1, OutElement), element(1, InElement)),
+      io:format(S, "DODAG_ID: ~p , From: ~p, TO: ~p,  Path: ~p~n", [self(), element(1, OutElement), element(1, InElement), Vertices])
+                  end, NodeList)
+                end, NodeList).

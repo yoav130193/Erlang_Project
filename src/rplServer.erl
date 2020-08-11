@@ -10,8 +10,8 @@
 -author("yoavlevy").
 -behavior(gen_server).
 %% API
--export([start_link/0]).
--export([code_change/3,
+-export([start_link/1,
+  code_change/3,
   handle_call/3,
   handle_cast/2,
   handle_info/2,
@@ -25,10 +25,20 @@
 -type rootList() :: [{rootPid, ref, float, float}].
 
 -define(LOG_FILE_NAME, "my_log_file.txt").
+-define(DOWNWARD_DIGRAPH_FILE, "downward_digraph_file.txt").
 -define(VERSION_RANK, version_rank).
 
+-define(RPL_SERVER, rplServer).
+-define(NODE_SERVER, nodeServer).
+-define(ROOT_SERVER, rootServer).
 
-start_link() -> gen_server:start_link(?MODULE, [], []).
+
+-define(NODE_LIST, nodeList).
+-define(ROOT_LIST, rootList).
+
+
+
+start_link(Mop) -> gen_server:start_link({local, ?RPL_SERVER}, ?RPL_SERVER, [Mop], []).
 
 
 %*****************   Initialization    ***************%
@@ -40,9 +50,9 @@ init(Mop) ->
   io:format(S, "~s~n", ["{DODAG_ID,Message Type,From,To}"]),
 
   process_flag(trap_exit, true),
-  io:format("myserver init~n"),
-  ets:new(nodeList, [set, named_table, public]),
-  ets:new(rootList, [set, named_table, public]),
+  io:format("rplServer init~n"),
+  ets:new(?NODE_LIST, [set, named_table, public]),
+  ets:new(?ROOT_LIST, [set, named_table, public]),
   ets:new(mop, [set, named_table, public]),
   ets:insert(mop, {mopKey, Mop}),
   NodeCount = 1,
@@ -58,21 +68,28 @@ init(Mop) ->
 
 % Call from the GUI - addition of a new node
 % Return to the GUI the Pid of the new node
+%TODO - handle REF
 handle_call({addNode, normal}, _From, {NodeCount, RootCount, RandomLocationList}) ->
   io:format("myserver wants to add a normal node~n"),
-  {Pid, Ref} = spawn_monitor(nodeLoop, loopStart, [NodeCount]),
-  ets:insert(nodeList, {Pid, {Ref, hd(RandomLocationList), hd(tl(RandomLocationList))}}),
+  {_, Pid} = nodeServer:start_link(NodeCount),
+  Ref = 0,
+  % {Pid, Ref} = spawn_monitor(nodeLoop, loopStart, [NodeCount]),
+  ets:insert(?NODE_LIST, {Pid, {Ref, hd(RandomLocationList), hd(tl(RandomLocationList))}}),
   NewData = {NodeCount + 1, RootCount, tl(tl(RandomLocationList))},
   {reply, {Pid, Ref}, NewData};
 
 % CALL from the GUI - to add a root node
 % Return to the GUI the Pid of the new node
+%TODO - handle REF
 handle_call({addNode, root}, _From, {NodeCount, RootCount, RandomLocationList}) ->
   io:format("myserver wants to add a root node~n"),
-  {Pid, Ref} = spawn_monitor(rootLoop, loopStart, [RootCount]),
-  ets:insert(nodeList, {Pid, {Ref, hd(RandomLocationList), hd(tl(RandomLocationList))}}),
-  ets:insert(rootList, {Pid, {Ref, hd(RandomLocationList), hd(tl(RandomLocationList))}}),
+  {_, Pid} = rootServer:start_link(RootCount),
+  Ref = 0,
+%  {Pid, Ref} = spawn_monitor(rootLoop, loopStart, [RootCount]),
+  ets:insert(?NODE_LIST, {Pid, {Ref, hd(RandomLocationList), hd(tl(RandomLocationList))}}),
+  ets:insert(?ROOT_LIST, {Pid, {Ref, hd(RandomLocationList), hd(tl(RandomLocationList))}}),
   NewData = {NodeCount + 1, RootCount + 1, tl(tl(RandomLocationList))},
+
   {reply, {Pid, Ref}, NewData}.
 
 %*** Nodes Locations ***%
@@ -82,8 +99,24 @@ handle_call({addNode, root}, _From, {NodeCount, RootCount, RandomLocationList}) 
 % server sends to all the roots to start building the network
 % After the network is ready -> try send a message
 handle_cast({buildNetwork}, Data) ->
-  RootList = ets:tab2list(rootList),
+  RootList = ets:tab2list(?ROOT_LIST),
   buildNetwork(RootList),
+  %From ! {message, To, Msg},
+%  sendLocations(RootList, Locations),
+  {noreply, Data};
+
+handle_cast({downwardDigraphBuild}, Data) ->
+  RootList = ets:tab2list(?ROOT_LIST),
+  upwardDigraphBuild(RootList),
+  %From ! {message, To, Msg},
+%  sendLocations(RootList, Locations),
+  {noreply, Data};
+
+%TODO - just for debug
+handle_cast({getAllPath}, Data) ->
+  RootList = ets:tab2list(rootList),
+  getAllPath(RootList),
+  %upwardDigraphBuild(RootList),
   %From ! {message, To, Msg},
 %  sendLocations(RootList, Locations),
   {noreply, Data};
@@ -92,9 +125,9 @@ handle_cast({buildNetwork}, Data) ->
 % no reply to the GUI
 % server sends to all the roots to start building the network
 % After the network is ready -> try send a message
-handle_cast({message, {From, To, Msg}}, Data) ->
-  RootList = ets:tab2list(rootList),
-  buildNetwork(RootList),
+handle_cast({sendMessage, {From, To, Msg}}, Data) ->
+  From ! {sendMessage, {From, To, Msg}},
+  %buildNetwork(RootList),
   %From ! {message, To, Msg},
 %  sendLocations(RootList, Locations),
   {noreply, Data};
@@ -123,16 +156,23 @@ code_change(_OldVsn, _State, _Extra) ->
 
 %******************   Utils Functions   ************
 
-% Send all locations to a List of Nodes
-sendLocations([], Locations) -> [];
-sendLocations(NodeList, Locations) ->
-  io:format("server sends to: ~p~n ", [element(1, element(1, hd(NodeList)))]),
-  element(1, element(1, hd(NodeList))) ! {locations, Locations},
-  sendLocations(tl(NodeList), Locations).
-
-
 % Send to all the roots to start build its DODAGs
 buildNetwork(RootList) ->
-  lists:foreach(fun(Element) -> element(1, Element) ! {buildNetwork} end, RootList).
+  lists:foreach(fun(Element) ->
+    gen_server:cast(element(1, Element), {buildNetwork})
+  %   element(1, Element) ! {buildNetwork}
+                end, RootList).
 
+% Building from the roots the downwardDigraphBuild
+upwardDigraphBuild(RootList) ->
+  lists:foreach(fun(Element) ->
+    gen_server:cast(element(1, Element), {downwardDigraphBuild})
+%element(1, Element) ! {downwardDigraphBuild}
+                end, RootList).
 
+% Just for Debug, Check all the Path Exist
+getAllPath(RootList) ->
+  lists:foreach(fun(Element) ->
+    gen_server:cast(element(1, Element), {getAllPath})
+  %element(1, Element) ! {getAllPath}
+                end, RootList).
