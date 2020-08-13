@@ -72,7 +72,6 @@ handle_cast({daoAckMsg, From, DaoAckMsg}, {RootCount, Version, Mop}) ->
 
 %*****************    DIGRAPH BUILD     *****************%
 
-
 % 3 Messages for building the downward Digraph: downwardDigraphBuild, giveParent, requestParent.
 
 % rplServer called this function, Each Root starts to build the digraph
@@ -104,10 +103,9 @@ handle_cast({giveParent, DodagID, From, Parent}, {RootCount, Version, Mop}) ->
   put(?DOWNWARD_DIGRAPH, DownwardDigraph),
   {noreply, {RootCount, Version, Mop}};
 
-%*****************    SENDING A MESSAGE     *****************%
+%*****************    SENDING A MESSAGE - CAST     *****************%
 
 handle_cast({sendMessage, {From, To, Msg}}, State) ->
-%TODO - implement this
   utils:sendMessage(From, To, Msg),
   {noreply, State};
 
@@ -116,10 +114,15 @@ handle_cast({parentMsg, From, To, DodagID, Msg}, State) ->
   MyPid = self(),
   case DodagID of
     MyPid ->
-      io:format("parentMsg, DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p,  got to the root~n", [DodagID, self(), Msg, From, To]),
-      PathList = digraph:get_path(get(?DOWNWARD_DIGRAPH), self(), To),
-      io:format("PathList: ~p~n", [PathList]),
-      gen_server:cast(hd(PathList), {downwardMessage, From, To, Msg, DodagID, tl(PathList)});
+      if
+        To =:= MyPid ->
+          io:format("Got the Msg!!! DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p~n", [DodagID, self(), Msg, From, To]);
+        true ->
+          io:format("parentMsg, DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p,  got to the root~n", [DodagID, self(), Msg, From, To]),
+          PathList = digraph:get_path(get(?DOWNWARD_DIGRAPH), self(), To),
+          io:format("PathList: ~p~n", [PathList]),
+          gen_server:cast(hd(PathList), {downwardMessage, From, To, Msg, DodagID, tl(PathList)})
+      end;
     _ -> gen_server:cast(get({?PARENT, DodagID}), {parentMsg, From, To, DodagID, Msg})
   end,
   {noreply, State};
@@ -135,6 +138,7 @@ handle_cast({downwardMessage, From, To, Msg, DodagID, PathList}, State) ->
   end,
   {noreply, State};
 
+
 %*****************    DEBUG FUNCTIONS     *****************%
 
 
@@ -143,6 +147,19 @@ handle_cast({getAllPath}, State) ->
   getAllPath(NodeList),
   {noreply, State}.
 
+%*****************    SENDING A MESSAGE - CALL     *****************%
+
+handle_call({calculateRoute, To}, From, State) ->
+
+  case digraph:get_path(get(?DOWNWARD_DIGRAPH), self(), To) of
+    false -> if
+               To =:= self() -> PathLength = 0;
+               true -> PathLength = false
+             end;
+    PathList -> PathLength = length(PathList)
+  end,
+  io:format("calculateRoute, DODAGID: ~p, PathLength: ~p~n", [self(), PathLength]),
+  {reply, PathLength, State};
 
 handle_call(Request, From, State) ->
   erlang:error(not_implemented).

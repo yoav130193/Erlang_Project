@@ -79,7 +79,7 @@ handleDaoAck({From, DaoAckMsg}, {RootCount, Version, Mop}) ->
   put({?PARENT, DaoAckMsg#daoAckMsg.dodagId}, From), % Update Parent
   {NewVersion, Rank} = get({?VERSION_RANK, DaoAckMsg#daoAckMsg.dodagId}),
   {MyNode, Neighbors} = utils:findMeAndNeighbors(self()),
-  io:format("node number: ~p Continue To Build,~n From : ~p~n~n", [RootCount, MyNode]),
+  io:format("DODAG_ID: ~p , node number: ~p Continue To Build,~n From : ~p~n~n", [DaoAckMsg#daoAckMsg.dodagId, RootCount, MyNode]),
   rpl_msg:sendDioToNeighbors(self(), DaoAckMsg#daoAckMsg.dodagId, Rank, NewVersion, Mop, Neighbors).
 
 

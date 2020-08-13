@@ -82,7 +82,7 @@ handle_cast({downwardMessage, From, To, Msg, DodagID, PathList}, State) ->
   MyPid = self(),
   case To of
     MyPid ->
-      io:format("Got the Msg!!! DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p~n", [DodagID, self(), Msg, From, To]);
+      io:format("Got the Msg!!! DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p~n~n", [DodagID, self(), Msg, From, To]);
     _ ->
       io:format("downwardMessage, DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p~n", [DodagID, self(), Msg, From, To]),
       gen_server:cast(hd(PathList), {downwardMessage, From, To, Msg, DodagID, tl(PathList)})
