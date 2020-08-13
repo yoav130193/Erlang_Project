@@ -10,15 +10,16 @@
 -author("yoavlevy").
 
 %% API
--export([sendDioToNeighbors/6, sendDaoAfterDio/4, sendDaoAckAfterDao/4, noNeedToUpdateToFile/3]).
+-export([sendDioToNeighbors/6, sendDaoAfterDio/4, sendDaoAckAfterDao/4, handleDaoAck/2, noNeedToUpdateToFile/3]).
 
 -define(LOG_FILE_NAME, "my_log_file.txt").
 -define(VERSION_RANK, version_rank).
+-define(PARENT, parent).
+-define(MY_DODAGs, my_Dodags).
 
 % ***********   DIO MSG   ***********%
 
 -record(dioMsg, {rplInstanceId, versionNumber, rank, g = 2#1, zero = 2#0, mop, prf = 2#000, dtsn, flags = 16#00, reserved = 16#00, dodagId}).
-
 
 % DIO (DODAF Indormation Object)
 % This is a multicast message from the root that notifies all the nodes about his DODAG
@@ -73,8 +74,17 @@ sendDaoAckAfterDao(From, To, DodagId, State) ->
 %{reply, {daoAckMsg, From, DaoAckMsg}, State}.
 %To ! {daoAckMsg, From, DaoAckMsg}.
 
+handleDaoAck({From, DaoAckMsg}, {RootCount, Version, Mop}) ->
+  put(?MY_DODAGs, utils:getDodagList() ++ [DaoAckMsg#daoAckMsg.dodagId]),
+  put({?PARENT, DaoAckMsg#daoAckMsg.dodagId}, From), % Update Parent
+  {NewVersion, Rank} = get({?VERSION_RANK, DaoAckMsg#daoAckMsg.dodagId}),
+  {MyNode, Neighbors} = utils:findMeAndNeighbors(self()),
+  io:format("node number: ~p Continue To Build,~n From : ~p~n~n", [RootCount, MyNode]),
+  rpl_msg:sendDioToNeighbors(self(), DaoAckMsg#daoAckMsg.dodagId, Rank, NewVersion, Mop, Neighbors).
 
-%************   Save To a Log File    ************%
+
+%************   Save info TO Files    ************%
+
 saveDioToFile(Me, Neighbors, DodagId, Version, Rank) ->
   {ok, S} = file:open(?LOG_FILE_NAME, [append]),
   lists:foreach(fun(Element) ->

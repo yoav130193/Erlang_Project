@@ -125,11 +125,9 @@ handle_cast({getAllPath}, Data) ->
 % no reply to the GUI
 % server sends to all the roots to start building the network
 % After the network is ready -> try send a message
-handle_cast({sendMessage, {From, To, Msg}}, Data) ->
-  From ! {sendMessage, {From, To, Msg}},
+handle_cast({sendMessage, From, To, Msg}, Data) ->
+  gen_server:cast(From, {sendMessage, From, To, Msg}),
   %buildNetwork(RootList),
-  %From ! {message, To, Msg},
-%  sendLocations(RootList, Locations),
   {noreply, Data};
 
 %***************    CALLS FROM Nodes    *************%

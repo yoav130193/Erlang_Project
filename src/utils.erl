@@ -10,11 +10,16 @@
 -author("yoavlevy").
 
 %% API
--export([findMeAndNeighbors/1, findNeighbors/2, checkIfUpdateNeeded/4, requestParent/3, buildVertexDigraph/1]).
+-export([findMeAndNeighbors/1, findNeighbors/2, checkIfUpdateNeeded/4, requestParent/3, buildVertexDigraph/1, sendMessage/3, getDodagList/0]).
 
 -define(dis, 100).
 -define(VERSION_RANK, version_rank).
 -define(LOG_FILE_NAME, "my_log_file.txt").
+-define(MY_DODAGs, my_Dodags).
+-define(PARENT, parent).
+-define(DOWNWARD_DIGRAPH, downwardDigraph).
+-define(DOWNWARD_DIGRAPH_FILE, "downward_digraph_file.txt").
+-define(ROOT_SERVER, rootServer).
 
 %**************   FIND FRIENDS   **************%
 
@@ -75,4 +80,27 @@ buildVertexDigraph(NodeList) ->
   lists:foreach(fun(Element) -> digraph:add_vertex(Graph, element(1, Element), {self()}) end, NodeList),
   Graph.
 
+%**************  SENDING MESSASGE   **************%
 
+%TODO - fill this
+sendMessage(From, To, Msg) ->
+  DodagID = checkBestRoot(From, To),
+  Parent = get({?PARENT, DodagID}),
+  gen_server:cast(Parent, {parentMsg, From, To, DodagID, Msg}).
+
+
+%TODO - fill this correctly
+checkBestRoot(From, To) ->
+  DodagIdList = get(?MY_DODAGs),
+  hd(DodagIdList).
+
+
+%**************  TODO - think about it   **************%
+
+getDodagList() ->
+  case get({?MY_DODAGs}) of
+    undefined -> % NEED TO UPDATE
+      [];
+    DodagList ->
+      DodagList
+  end.

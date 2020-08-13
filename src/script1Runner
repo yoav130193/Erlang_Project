@@ -10,10 +10,15 @@ gen_server:cast(rplServer,{buildNetwork}).
 
 gen_server:cast(rplServer,{downwardDigraphBuild}).
 
+gen_server:cast(rplServer,{sendMessage, <0.123.0>,<0.125.0>,"HEY"}).
+
+gen_server:cast(rplServer,{sendMessage, <0.125.0>,<0.123.0>,"HEY"}).
+
+
 % Check Existence of Path
 gen_server:cast(rplServer,{getAllPath}).
 
-gen_server:cast(rplServer,{message, {Pid1,Pid2,"HEY"}}).
+
 
 % FOR REAL
 

@@ -12,26 +12,30 @@
 %% API
 -export([init/1, handle_call/3, handle_cast/2, terminate/2, start_link/1]).
 
-
 -record(dioMsg, {rplInstanceId, versionNumber, rank, g = 2#1, zero = 2#0, mop, prf = 2#000, dtsn, flags = 16#00, reserved = 16#00, dodagId}).
 -record(daoMsg, {rplInstanceId, k = 2#1, d = 2#1, flags = 8#00, reserved = 16#00, daoSequence, dodagId}).
 -record(daoAckMsg, {rplInstanceId, d = 2#1, reserved = 2#0000000, daoSequence, status = 16#01, dodagId}).
 
+
+-define(MY_DODAGs, my_Dodags).
 -define(VERSION_RANK, version_rank).
 -define(PARENT, parent).
 -define(DOWNWARD_DIGRAPH, downwardDigraph).
 -define(DOWNWARD_DIGRAPH_FILE, "downward_digraph_file.txt").
 -define(ROOT_SERVER, rootServer).
 
-start_link(RootCount) -> io:format("new root number: ~p~n ", [list_to_atom("root_server" ++ "1")]),
 
+start_link(RootCount) ->
   gen_server:start_link({local, list_to_atom("root_server" ++ integer_to_list(RootCount))}, ?ROOT_SERVER, [RootCount], []).
 
 init(RootCount) ->
   io:format("new root number: ~p~n ", [RootCount]),
+  put(?MY_DODAGs, self()),
   Version = 0,
   Mop = element(2, hd(ets:lookup(mop, mopKey))),
   {ok, {RootCount, Version, Mop}}.
+
+%****************     RPL PROTOCOL MESSAGES     *****************%
 
 
 % Got message from rplServer -> start to build the network
@@ -39,9 +43,10 @@ handle_cast({buildNetwork}, {RootCount, Version, Mop}) ->
   Rank = 0,
   put({?VERSION_RANK, self()}, {Version + 1, Rank}), % {Version, Rank}
   {MyNode, Neighbors} = utils:findMeAndNeighbors(self()), %Find My Process and My Neighbors Process
-  io:format("root number: ~p start building network,~n From : ~p~n~n", [RootCount, MyNode]),
+  io:format("root number: ~p start building network,~nI am : ~p~n~n", [RootCount, MyNode]),
   rpl_msg:sendDioToNeighbors(self(), self(), Rank, Version + 1, Mop, Neighbors),
   {noreply, {RootCount, Version + 1, Mop}};
+
 
 % Got DIO Message - check if update is Relevant
 handle_cast({dioMsg, From, DioMsg}, State) ->
@@ -54,16 +59,23 @@ handle_cast({dioMsg, From, DioMsg}, State) ->
       {noreply, State}
   end;
 
+%TODO - HALF implemented.. Think if need to send to an other root message
+%Got Dao message from a node that got DIO -> root needs to send dao-ack back, update the childrenList and upward digraph
+handle_cast({daoMsg, From, DaoMsg}, State) ->
+  rpl_msg:sendDaoAckAfterDao(self(), From, DaoMsg#daoMsg.dodagId, State),
+  {noreply, State};
+
 % Got From ACK on his DAO message, Distribute the network
 handle_cast({daoAckMsg, From, DaoAckMsg}, {RootCount, Version, Mop}) ->
-  put({?PARENT, DaoAckMsg#daoAckMsg.dodagId}, From), % Update Parent
-  {Version, Rank} = get({?VERSION_RANK, DaoAckMsg#daoAckMsg.dodagId}),
-  {MyNode, Neighbors} = utils:findMeAndNeighbors(self()),
-  io:format("node number: ~p Continue To Build,~n From : ~p~n~n", [RootCount, MyNode]),
-  rpl_msg:sendDioToNeighbors(self(), DaoAckMsg#daoAckMsg.dodagId, Rank, Version, Mop, Neighbors),
+  rpl_msg:handleDaoAck({From, DaoAckMsg}, {RootCount, Version, Mop}),
   {noreply, {RootCount, Version, Mop}};
 
+%*****************    DIGRAPH BUILD     *****************%
+
+
 % 3 Messages for building the downward Digraph: downwardDigraphBuild, giveParent, requestParent.
+
+% rplServer called this function, Each Root starts to build the digraph
 handle_cast({downwardDigraphBuild}, {RootCount, Version, Mop}) ->
   NodeList = ets:tab2list(nodeList),
   put(?DOWNWARD_DIGRAPH, utils:buildVertexDigraph(NodeList)),
@@ -84,6 +96,7 @@ handle_cast({requestParent, From, DodagID}, {RootCount, Version, Mop}) ->
   end,
   {noreply, {RootCount, Version, Mop}};
 
+% Some node gave his parent, now we can build the edge between them
 handle_cast({giveParent, DodagID, From, Parent}, {RootCount, Version, Mop}) ->
   io:format("giveParent, DodagID: ~p myNode: ~p Child: ~p Parent: ~p~n", [DodagID, self(), From, Parent]),
   DownwardDigraph = get(?DOWNWARD_DIGRAPH),
@@ -91,22 +104,48 @@ handle_cast({giveParent, DodagID, From, Parent}, {RootCount, Version, Mop}) ->
   put(?DOWNWARD_DIGRAPH, DownwardDigraph),
   {noreply, {RootCount, Version, Mop}};
 
-handle_cast({sendMessage, {From, To, Msg}}, {RootCount, Version, Mop}) ->
-  %TODO - implement this
-  {noreply, {RootCount, Version, Mop}};
+%*****************    SENDING A MESSAGE     *****************%
+
+handle_cast({sendMessage, {From, To, Msg}}, State) ->
+%TODO - implement this
+  utils:sendMessage(From, To, Msg),
+  {noreply, State};
+
+
+handle_cast({parentMsg, From, To, DodagID, Msg}, State) ->
+  MyPid = self(),
+  case DodagID of
+    MyPid ->
+      io:format("parentMsg, DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p,  got to the root~n", [DodagID, self(), Msg, From, To]),
+      PathList = digraph:get_path(get(?DOWNWARD_DIGRAPH), self(), To),
+      io:format("PathList: ~p~n", [PathList]),
+      gen_server:cast(hd(PathList), {downwardMessage, From, To, Msg, DodagID, tl(PathList)});
+    _ -> gen_server:cast(get({?PARENT, DodagID}), {parentMsg, From, To, DodagID, Msg})
+  end,
+  {noreply, State};
+
+handle_cast({downwardMessage, From, To, Msg, DodagID, PathList}, State) ->
+  MyPid = self(),
+  case To of
+    MyPid ->
+      io:format("Got the Msg!!! DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p~n", [DodagID, self(), Msg, From, To]);
+    _ ->
+      io:format("downwardMessage, DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p~n", [DodagID, self(), Msg, From, To]),
+      gen_server:cast(hd(PathList), {downwardMessage, From, To, Msg, DodagID, tl(PathList)})
+  end,
+  {noreply, State};
+
+%*****************    DEBUG FUNCTIONS     *****************%
+
 
 handle_cast({getAllPath}, State) ->
   NodeList = ets:tab2list(nodeList),
   getAllPath(NodeList),
-  {noreply, State};
-
-
-%TODO - HALF implemented.. Think if need to send to an other root message
-%Got Dao message from a node that got DIO -> root needs to send dao-ack back, update the childrenList and upward digraph
-handle_cast({daoMsg, From, DaoMsg}, State) ->
-  rpl_msg:sendDaoAckAfterDao(self(), From, DaoMsg#daoMsg.dodagId, State),
   {noreply, State}.
 
+
+handle_call(Request, From, State) ->
+  erlang:error(not_implemented).
 
 terminate(_Reason, _State) ->
   io:format("rootServer terminate~n"),
@@ -135,5 +174,3 @@ getAllPath(NodeList) ->
                 end, NodeList).
 
 
-handle_call(Request, From, State) ->
-  erlang:error(not_implemented).

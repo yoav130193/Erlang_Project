@@ -16,6 +16,7 @@
 -record(daoMsg, {rplInstanceId, k = 2#1, d = 2#1, flags = 8#00, reserved = 16#00, daoSequence, dodagId}).
 -record(daoAckMsg, {rplInstanceId, d = 2#1, reserved = 2#0000000, daoSequence, status = 16#01, dodagId}).
 
+-define(MY_DODAGs, my_Dodags).
 -define(VERSION_RANK, version_rank).
 -define(PARENT, parent).
 -define(NODE_SERVER, nodeServer).
@@ -28,6 +29,8 @@ init(NodeCount) ->
   Mop = element(2, hd(ets:lookup(mop, mopKey))),
   {ok, {NodeCount, Mop}}.
 
+%****************     RPL PROTOCOL MESSAGES     *****************%
+
 handle_cast({dioMsg, From, DioMsg}, State) ->
   UpdateNeeded = utils:checkIfUpdateNeeded(DioMsg#dioMsg.dodagId, DioMsg#dioMsg.versionNumber, DioMsg#dioMsg.rank + 1, From),
   if
@@ -38,15 +41,20 @@ handle_cast({dioMsg, From, DioMsg}, State) ->
   end,
   {noreply, State};
 
+
+%TODO - HALF implemented, Think if need to send to the root message
+%Got DAO message from a node that got DIO -> root/other needs to send dao-ack back
+handle_cast({daoMsg, From, DaoMsg}, State) ->
+  rpl_msg:sendDaoAckAfterDao(self(), From, DaoMsg#daoMsg.dodagId, State),
+  {noreply, State};
+
+
 % Got From ack on his DAO message, Distribute the network
 handle_cast({daoAckMsg, From, DaoAckMsg}, {NodeCount, Mop}) ->
-  put({?PARENT, DaoAckMsg#daoAckMsg.dodagId}, From), % Update Parent
-  {Version, Rank} = get({?VERSION_RANK, DaoAckMsg#daoAckMsg.dodagId}),
-  {MyNode, Neighbors} = utils:findMeAndNeighbors(self()),
-  io:format("node number: ~p Continue To Build,~n From : ~p~n~n", [NodeCount, MyNode]),
-  rpl_msg:sendDioToNeighbors(self(), DaoAckMsg#daoAckMsg.dodagId, Rank, Version, Mop, Neighbors),
-% rpl_msg:sendDioToNeighbors(),
+  rpl_msg:handleDaoAck({From, DaoAckMsg}, {NodeCount, [], Mop}),
   {noreply, {NodeCount, Mop}};
+
+%*****************    DIGRAPH BUILD     *****************%
 
 % Got a request for parents
 handle_cast({requestParent, From, DodagID}, {NodeCount, Mop}) ->
@@ -60,13 +68,26 @@ handle_cast({requestParent, From, DodagID}, {NodeCount, Mop}) ->
   end,
   {noreply, {NodeCount, Mop}};
 
+%*****************    SENDING A MESSAGE     *****************%
 
-%TODO - HALF implemented, Think if need to send to the root message
-%Got DAO message from a node that got DIO -> root/other needs to send dao-ack back
-handle_cast({daoMsg, From, DaoMsg}, State) ->
-  rpl_msg:sendDaoAckAfterDao(self(), From, DaoMsg#daoMsg.dodagId, State),
+handle_cast({parentMsg, From, To, DodagID, Msg}, State) ->
+  gen_server:cast(get({?PARENT, DodagID}), {parentMsg, From, To, DodagID, Msg}),
+  {noreply, State};
+
+handle_cast({sendMessage, From, To, Msg}, State) ->
+  utils:sendMessage(From, To, Msg),
+  {noreply, State};
+
+handle_cast({downwardMessage, From, To, Msg, DodagID, PathList}, State) ->
+  MyPid = self(),
+  case To of
+    MyPid ->
+      io:format("Got the Msg!!! DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p~n", [DodagID, self(), Msg, From, To]);
+    _ ->
+      io:format("downwardMessage, DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p~n", [DodagID, self(), Msg, From, To]),
+      gen_server:cast(hd(PathList), {downwardMessage, From, To, Msg, DodagID, tl(PathList)})
+  end,
   {noreply, State}.
-
 
 
 terminate(_Reason, _State) ->

@@ -37,8 +37,6 @@ compileAll() ->
   compile:file(rplServer),
   compile:file(nodeServer),
   compile:file(rootServer),
-  %compile:file(rootLoop),
-  %compile:file(nodeLoop),
   compile:file(rpl_msg),
   compile:file(gfx_server),
   compile:file(funcGenerator),
