@@ -30,7 +30,7 @@ start_link(RootCount) ->
 
 init(RootCount) ->
   io:format("new root number: ~p~n ", [RootCount]),
-  put(?MY_DODAGs, self()),
+  put(?MY_DODAGs, [self()]),
   Version = 0,
   Mop = element(2, hd(ets:lookup(mop, mopKey))),
   {ok, {RootCount, Version, Mop}}.
@@ -105,7 +105,7 @@ handle_cast({giveParent, DodagID, From, Parent}, {RootCount, Version, Mop}) ->
 
 %*****************    SENDING A MESSAGE - CAST     *****************%
 
-handle_cast({sendMessage, {From, To, Msg}}, State) ->
+handle_cast({sendMessage, From, To, Msg}, State) ->
   utils:sendMessage(From, To, Msg),
   {noreply, State};
 
@@ -119,9 +119,7 @@ handle_cast({parentMsg, From, To, DodagID, Msg}, State) ->
           io:format("Got the Msg!!! DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p~n", [DodagID, self(), Msg, From, To]);
         true ->
           io:format("parentMsg, DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p,  got to the root~n", [DodagID, self(), Msg, From, To]),
-          PathList = digraph:get_path(get(?DOWNWARD_DIGRAPH), self(), To),
-          io:format("PathList: ~p~n", [PathList]),
-          gen_server:cast(hd(PathList), {downwardMessage, From, To, Msg, DodagID, tl(PathList)})
+          utils:startSendDownward(From, To, Msg, DodagID)
       end;
     _ -> gen_server:cast(get({?PARENT, DodagID}), {parentMsg, From, To, DodagID, Msg})
   end,
@@ -151,13 +149,7 @@ handle_cast({getAllPath}, State) ->
 
 handle_call({calculateRoute, To}, From, State) ->
 
-  case digraph:get_path(get(?DOWNWARD_DIGRAPH), self(), To) of
-    false -> if
-               To =:= self() -> PathLength = 0;
-               true -> PathLength = false
-             end;
-    PathList -> PathLength = length(PathList)
-  end,
+  PathLength = utils:calculatePath(To),
   io:format("calculateRoute, DODAGID: ~p, PathLength: ~p~n", [self(), PathLength]),
   {reply, PathLength, State};
 

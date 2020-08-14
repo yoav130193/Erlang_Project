@@ -10,7 +10,7 @@
 -author("yoavlevy").
 
 %% API
--export([findMeAndNeighbors/1, findNeighbors/2, checkIfUpdateNeeded/4, requestParent/3, buildVertexDigraph/1, sendMessage/3, getDodagList/0]).
+-export([findMeAndNeighbors/1, findNeighbors/2, checkIfUpdateNeeded/4, requestParent/3, buildVertexDigraph/1, sendMessage/3, getDodagList/0, calculatePath/1,startSendDownward/4]).
 
 -define(dis, 100).
 -define(VERSION_RANK, version_rank).
@@ -83,37 +83,47 @@ buildVertexDigraph(NodeList) ->
 %**************  SENDING MESSASGE   **************%
 
 sendMessage(From, To, Msg) ->
-  case checkBestRoot(From, To) of
-    {ok, DodagID} -> Parent = get({?PARENT, DodagID}),
-      gen_server:cast(Parent, {parentMsg, From, To, DodagID, Msg});
-    {error, Reason} -> Reason
+  case checkBestRoute(From, To) of
+    {ok, MinDodagId, MinDistance, DodagIdList} ->
+      io:format("Best Dodag is: ~p , the distance is: ~p between all dodags:~p~n", [MinDodagId, MinDistance, DodagIdList]),
+      if
+        From =:= MinDodagId ->
+          startSendDownward(From, To, Msg, MinDodagId);
+        true ->
+          Parent = get({?PARENT, MinDodagId}),
+          gen_server:cast(Parent, {parentMsg, From, To, MinDodagId, Msg})
+      end;
+    {error, Reason} ->
+      io:format("NO ROUTE FROM:~p TO:~p~n", [From, To])
   end.
 
 
 %TODO - fill this correctly
-checkBestRoot(From, To) ->
+checkBestRoute(From, To) ->
   DodagIdList = getDodagList(),
   case DodagIdList of
-    [] -> io:format("NO ROUTE FROM:~p TO:~p~n", [From, To]),
-      {error, noRoute};
-    _ -> {MinDodagId, MinDistance} = findMinimum(DodagIdList, To, {100000, 100000}),
+    [] -> {error, noRoute};
+    _ ->
+      io:format("finding the Minimum Path, From: ~p, To:~p: ,DodagList:~p~n", [From, To, DodagIdList]),
+      {MinDodagId, MinDistance} = findMinimum(DodagIdList, To, From, {100000, 100000}),
       if
-        MinDistance =:= 100000 -> io:format("NO ROUTE FROM:~p TO:~p~n", [From, To]),
-          {error, noRoute};
+        MinDistance =:= 100000 -> {error, noRoute};
         true ->
-          io:format("Best Dodag is: ~p , the distance is:~p between all dodags:~p~n", [MinDodagId, MinDistance, DodagIdList]),
-          {ok, MinDodagId}
+          {ok, MinDodagId, MinDistance, DodagIdList}
       end
   end.
 
-findMinimum([], To, {MinDodagId, MinDistance}) -> {MinDodagId, MinDistance};
-findMinimum(DodagIdList, To, {MinDodagId, MinDistance}) ->
-  Distance = gen_server:call(hd(DodagIdList), {calculateRoute, To}),
+findMinimum([], To, From, {MinDodagId, MinDistance}) -> {MinDodagId, MinDistance};
+findMinimum(DodagIdList, To, From, {MinDodagId, MinDistance}) ->
+  if
+    From =:= hd(DodagIdList) -> Distance = calculatePath(To);
+    true -> Distance = gen_server:call(hd(DodagIdList), {calculateRoute, To})
+  end,
   {_, Rank} = get({?VERSION_RANK, hd(DodagIdList)}),
   if
-    Distance =:= false -> findMinimum(tl(DodagIdList), To, {MinDodagId, MinDistance});
-    Distance + Rank < MinDistance -> findMinimum(tl(DodagIdList), To, {hd(DodagIdList), Distance + Rank});
-    true -> findMinimum(tl(DodagIdList), To, {MinDodagId, MinDistance})
+    Distance =:= false -> findMinimum(tl(DodagIdList), To, From, {MinDodagId, MinDistance});
+    Distance + Rank < MinDistance -> findMinimum(tl(DodagIdList), To, From, {hd(DodagIdList), Distance + Rank});
+    true -> findMinimum(tl(DodagIdList), To, From, {MinDodagId, MinDistance})
   end.
 
 %**************  TODO - think about it   **************%
@@ -126,3 +136,18 @@ getDodagList() ->
     DodagList ->
       DodagList
   end.
+
+
+calculatePath(To) ->
+  case digraph:get_path(get(?DOWNWARD_DIGRAPH), self(), To) of
+    false -> if
+               To =:= self() -> 0;
+               true -> false
+             end;
+    PathList -> length(PathList)
+  end.
+
+startSendDownward(From, To, Msg, MinDodagId) ->
+  PathList = digraph:get_path(get(?DOWNWARD_DIGRAPH), self(), To),
+  io:format("PathList: ~p~n", [PathList]),
+  gen_server:cast(hd(PathList), {downwardMessage, From, To, Msg, MinDodagId, tl(PathList)}).
