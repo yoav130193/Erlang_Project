@@ -155,6 +155,7 @@ handle_cast({sendUnicastMessage, From, To, Msg}, Data) ->
 % MULTICAST from the GUI - request to send message from node A -> Group Of Nodes
 % roots start building the network
 % After the network is ready -> try send a message
+% MessageList format  = List of records of messageFormat (above)
 handle_cast({sendMulticastMessage, MessageList}, Data) ->
   RootList = ets:tab2list(?ROOT_LIST),
   NewData = addMessagesToData(MessageList, Data),
