@@ -20,6 +20,9 @@
 -define(VERSION_RANK, version_rank).
 -define(PARENT, parent).
 -define(NODE_SERVER, nodeServer).
+-define(MSG_TABLE, msgTable).
+
+-record(msg_table_key, {dodagId, from, to}).
 
 start_link(NodeCount) ->
   gen_server:start_link({local, list_to_atom("node_server" ++ integer_to_list(NodeCount))}, ?NODE_SERVER, [NodeCount], []).
@@ -32,13 +35,7 @@ init(NodeCount) ->
 %****************     RPL PROTOCOL MESSAGES     *****************%
 
 handle_cast({dioMsg, From, DioMsg}, State) ->
-  UpdateNeeded = utils:checkIfUpdateNeeded(DioMsg#dioMsg.dodagId, DioMsg#dioMsg.versionNumber, DioMsg#dioMsg.rank + 1, From),
-  if
-    UpdateNeeded =:= true -> % Update rank and version -> send back DAO message
-      put({?VERSION_RANK, DioMsg#dioMsg.dodagId}, {DioMsg#dioMsg.versionNumber, DioMsg#dioMsg.rank + 1}),
-      rpl_msg:sendDaoAfterDio(self(), From, DioMsg#dioMsg.dodagId, State);
-    true -> rpl_msg:noNeedToUpdateToFile(self(), From, DioMsg#dioMsg.dodagId)
-  end,
+  rpl_msg:handleDioMsg(DioMsg, From, State),
   {noreply, State};
 
 
@@ -60,11 +57,11 @@ handle_cast({daoAckMsg, From, DaoAckMsg}, {NodeCount, Mop}) ->
 handle_cast({requestParent, From, DodagID}, {NodeCount, Mop}) ->
   case get({?PARENT, DodagID}) of
     undefined -> % NEED TO UPDATE
-      io:format("requestParent, UNDEFIEND, DodagID: ~p node: ~p got from :~p~n", [DodagID, self(), From]);
+      io:format("requestParent, UNDEFIEND, DodagID: ~p node: ~p got from :~p~n", [DodagID, self(), From]),
+      utils:deleteMessageFromEts(DodagID, From, self(), {finishedDigraphBuilding});
     Parent ->
       io:format("requestParent, FIND, DodagID: ~pnode: ~p got from :~p Parent: ~p~n", [DodagID, self(), From, Parent]),
       gen_server:cast(From, {giveParent, DodagID, self(), Parent})
-    %   From ! {giveParent, DodagID, self(), Parent}
   end,
   {noreply, {NodeCount, Mop}};
 

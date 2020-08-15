@@ -23,7 +23,9 @@
 -define(DOWNWARD_DIGRAPH, downwardDigraph).
 -define(DOWNWARD_DIGRAPH_FILE, "downward_digraph_file.txt").
 -define(ROOT_SERVER, rootServer).
+-define(MSG_TABLE, msgTable).
 
+-record(msg_table_key, {dodagId, from, to}).
 
 start_link(RootCount) ->
   gen_server:start_link({local, list_to_atom("root_server" ++ integer_to_list(RootCount))}, ?ROOT_SERVER, [RootCount], []).
@@ -31,6 +33,7 @@ start_link(RootCount) ->
 init(RootCount) ->
   io:format("new root number: ~p~n ", [RootCount]),
   put(?MY_DODAGs, [self()]),
+  % ets:new(hi, [set, public]),
   Version = 0,
   Mop = element(2, hd(ets:lookup(mop, mopKey))),
   {ok, {RootCount, Version, Mop}}.
@@ -50,14 +53,8 @@ handle_cast({buildNetwork}, {RootCount, Version, Mop}) ->
 
 % Got DIO Message - check if update is Relevant
 handle_cast({dioMsg, From, DioMsg}, State) ->
-  UpdateNeeded = utils:checkIfUpdateNeeded(DioMsg#dioMsg.dodagId, DioMsg#dioMsg.versionNumber, DioMsg#dioMsg.rank + 1, From),
-  if
-    UpdateNeeded =:= true -> % Update rank and version -> send back DAO message
-      put({?VERSION_RANK, DioMsg#dioMsg.dodagId}, {DioMsg#dioMsg.versionNumber, DioMsg#dioMsg.rank + 1}),
-      rpl_msg:sendDaoAfterDio(self(), From, DioMsg#dioMsg.dodagId, State);
-    true -> rpl_msg:noNeedToUpdateToFile(self(), From, DioMsg#dioMsg.dodagId),
-      {noreply, State}
-  end;
+  rpl_msg:handleDioMsg(DioMsg, From, State),
+  {noreply, State};
 
 %TODO - HALF implemented.. Think if need to send to an other root message
 %Got Dao message from a node that got DIO -> root needs to send dao-ack back, update the childrenList and upward digraph
@@ -89,7 +86,8 @@ handle_cast({downwardDigraphBuild}, {RootCount, Version, Mop}) ->
 handle_cast({requestParent, From, DodagID}, {RootCount, Version, Mop}) ->
   case get({?PARENT, DodagID}) of
     undefined -> % NEED TO UPDATE
-      continue;
+      io:format("requestParent, UNDEFIEND, DodagID: ~p node: ~p got from :~p~n", [DodagID, self(), From]),
+      utils:deleteMessageFromEts(DodagID, From, self(), {finishedDigraphBuilding});
     Parent ->
       gen_server:cast(From, {giveParent, DodagID, self(), Parent})
   end,
@@ -100,6 +98,7 @@ handle_cast({giveParent, DodagID, From, Parent}, {RootCount, Version, Mop}) ->
   io:format("giveParent, DodagID: ~p myNode: ~p Child: ~p Parent: ~p~n", [DodagID, self(), From, Parent]),
   DownwardDigraph = get(?DOWNWARD_DIGRAPH),
   digraph:add_edge(DownwardDigraph, Parent, From),
+  utils:deleteMessageFromEts(DodagID, self(), From, {finishedDigraphBuilding}),
   put(?DOWNWARD_DIGRAPH, DownwardDigraph),
   {noreply, {RootCount, Version, Mop}};
 
@@ -148,10 +147,13 @@ handle_cast({getAllPath}, State) ->
 %*****************    SENDING A MESSAGE - CALL     *****************%
 
 handle_call({calculateRoute, To}, From, State) ->
-
   PathLength = utils:calculatePath(To),
   io:format("calculateRoute, DODAGID: ~p, PathLength: ~p~n", [self(), PathLength]),
   {reply, PathLength, State};
+
+handle_call({hi}, From, State) ->
+  io:format("Got hi: ~p~n", [self()]),
+  {reply, cool, State};
 
 handle_call(Request, From, State) ->
   erlang:error(not_implemented).

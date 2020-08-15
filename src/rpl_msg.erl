@@ -10,12 +10,15 @@
 -author("yoavlevy").
 
 %% API
--export([sendDioToNeighbors/6, sendDaoAfterDio/4, sendDaoAckAfterDao/4, handleDaoAck/2, noNeedToUpdateToFile/3]).
+-export([sendDioToNeighbors/6, sendDaoAfterDio/4, sendDaoAckAfterDao/4, handleDaoAck/2, noNeedToUpdateToFile/3, handleDioMsg/3]).
 
 -define(LOG_FILE_NAME, "my_log_file.txt").
 -define(VERSION_RANK, version_rank).
 -define(PARENT, parent).
 -define(MY_DODAGs, my_Dodags).
+-define(MSG_TABLE, msgTable).
+
+-record(msg_table_key, {dodagId, from, to}).
 
 % ***********   DIO MSG   ***********%
 
@@ -33,9 +36,22 @@ sendDioToNeighbors(Pid, DodagId, Rank, Version, Mop, Neighbors) ->
   DioMsg = dioMsg(DodagId, Rank, Version, Mop),
   io:format("DODAG_ID: ~p ,DIO message from: ~p, sends to: ~p~nmsg: ~p~n~n", [DodagId, Pid, Neighbors, DioMsg]),
   saveDioToFile(self(), Neighbors, DodagId, Version, Rank),
-  lists:foreach(fun(Element) -> gen_server:cast(element(1, Element), {dioMsg, self(), DioMsg})
+  lists:foreach(fun(Element) ->
+    ets:insert(?MSG_TABLE, {#msg_table_key{dodagId = DioMsg#dioMsg.dodagId, from = self(), to = element(1, Element)}, {msg}}),
+    gen_server:cast(element(1, Element), {dioMsg, self(), DioMsg})
 %element(1, Element) ! {dioMsg, self(), DioMsg}
                 end, Neighbors).
+
+handleDioMsg(DioMsg, From, State) ->
+  UpdateNeeded = utils:checkIfUpdateNeeded(DioMsg#dioMsg.dodagId, DioMsg#dioMsg.versionNumber, DioMsg#dioMsg.rank + 1, From),
+  if
+    UpdateNeeded =:= true -> % Update rank and version -> send back DAO message
+      put({?VERSION_RANK, DioMsg#dioMsg.dodagId}, {DioMsg#dioMsg.versionNumber, DioMsg#dioMsg.rank + 1}),
+      rpl_msg:sendDaoAfterDio(self(), From, DioMsg#dioMsg.dodagId, State);
+    true ->
+      utils:deleteMessageFromEts(DioMsg#dioMsg.dodagId, From, self(), {finishedBuilding}),
+      rpl_msg:noNeedToUpdateToFile(self(), From, DioMsg#dioMsg.dodagId)
+  end.
 
 % ***********   DAO MSG   ***********%
 
@@ -53,7 +69,6 @@ sendDaoAfterDio(From, To, DodagId, State) ->
   io:format("DODAG_ID: ~p, DAO message from: ~p to: ~p~nmsg:~p~n~n", [DodagId, From, To, DaoMsg]),
   saveDaoToFile(From, To, DodagId),
   gen_server:cast(To, {daoMsg, From, DaoMsg}).
-%To ! {daoMsg, From, DaoMsg}.
 
 
 % ***********   DAO ACK MSG   ***********%
@@ -71,16 +86,17 @@ sendDaoAckAfterDao(From, To, DodagId, State) ->
   io:format("DODAG_ID: ~p,DAO-ACK message from: ~p to: ~p~nmsg:~p~n~n", [DodagId, From, To, DaoAckMsg]),
   saveDaoAckToFile(From, To, DodagId),
   gen_server:cast(To, {daoAckMsg, From, DaoAckMsg}).
-%{reply, {daoAckMsg, From, DaoAckMsg}, State}.
-%To ! {daoAckMsg, From, DaoAckMsg}.
+
 
 handleDaoAck({From, DaoAckMsg}, {RootCount, Version, Mop}) ->
+  DodagID = DaoAckMsg#daoAckMsg.dodagId,
   put(?MY_DODAGs, utils:getDodagList() ++ [DaoAckMsg#daoAckMsg.dodagId]),
   put({?PARENT, DaoAckMsg#daoAckMsg.dodagId}, From), % Update Parent
   {NewVersion, Rank} = get({?VERSION_RANK, DaoAckMsg#daoAckMsg.dodagId}),
   {MyNode, Neighbors} = utils:findMeAndNeighbors(self()),
   io:format("DODAG_ID: ~p , node number: ~p Continue To Build,~n From : ~p~n~n", [DaoAckMsg#daoAckMsg.dodagId, RootCount, MyNode]),
-  rpl_msg:sendDioToNeighbors(self(), DaoAckMsg#daoAckMsg.dodagId, Rank, NewVersion, Mop, Neighbors).
+  rpl_msg:sendDioToNeighbors(self(), DaoAckMsg#daoAckMsg.dodagId, Rank, NewVersion, Mop, Neighbors),
+  utils:deleteMessageFromEts(DodagID, From, self(), {finishedBuilding}).
 
 
 %************   Save info TO Files    ************%

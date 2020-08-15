@@ -16,7 +16,8 @@
   handle_cast/2,
   handle_info/2,
   init/1,
-  terminate/2]).
+  terminate/2,
+  printData/1]).
 
 %******** DATA STRUCTURES ********%
 % {nodePid,ref, X , Y}
@@ -31,11 +32,15 @@
 -define(RPL_SERVER, rplServer).
 -define(NODE_SERVER, nodeServer).
 -define(ROOT_SERVER, rootServer).
+-define(MSG_TABLE, msgTable).
 
 
 -define(NODE_LIST, nodeList).
 -define(ROOT_LIST, rootList).
+-define(MOP, mop).
 
+-record(rplServerData, {nodeCount, rootCount, randomLocationList, msg_id, messageList}).
+-record(messageFormat, {msgId, from, to, msg}).
 
 
 start_link(Mop) -> gen_server:start_link({local, ?RPL_SERVER}, ?RPL_SERVER, [Mop], []).
@@ -48,18 +53,19 @@ init(Mop) ->
   % FOR DEBUG ONLY
   {ok, S} = file:open(?LOG_FILE_NAME, [append]),
   io:format(S, "~s~n", ["{DODAG_ID,Message Type,From,To}"]),
-
   process_flag(trap_exit, true),
   io:format("rplServer init~n"),
   ets:new(?NODE_LIST, [set, named_table, public]),
   ets:new(?ROOT_LIST, [set, named_table, public]),
-  ets:new(mop, [set, named_table, public]),
+  ets:new(?MSG_TABLE, [set, named_table, public]),
+  ets:new(?MOP, [set, named_table, public]),
   ets:insert(mop, {mopKey, Mop}),
   NodeCount = 1,
   RootCount = 1,
   random:seed(1),
   RandomLocationList = [random:uniform(200) || _ <- lists:seq(1, 50)],
-  {ok, {NodeCount, RootCount, RandomLocationList}}.
+  Data = #rplServerData{nodeCount = NodeCount, rootCount = RootCount, randomLocationList = RandomLocationList, msg_id = 0, messageList = []},
+  {ok, Data}.
 
 
 %*****************   CALLS FROM GUI    ***************%
@@ -69,65 +75,90 @@ init(Mop) ->
 % Call from the GUI - addition of a new node
 % Return to the GUI the Pid of the new node
 %TODO - handle REF
-handle_call({addNode, normal}, _From, {NodeCount, RootCount, RandomLocationList}) ->
+handle_call({addNode, normal}, _From, Data) ->
   io:format("myserver wants to add a normal node~n"),
-  {_, Pid} = nodeServer:start_link(NodeCount),
+  {_, Pid} = nodeServer:start_link(Data#rplServerData.nodeCount),
   Ref = 0,
-  % {Pid, Ref} = spawn_monitor(nodeLoop, loopStart, [NodeCount]),
-  ets:insert(?NODE_LIST, {Pid, {Ref, hd(RandomLocationList), hd(tl(RandomLocationList))}}),
-  NewData = {NodeCount + 1, RootCount, tl(tl(RandomLocationList))},
+  ets:insert(?NODE_LIST, {Pid, {Ref, hd(Data#rplServerData.randomLocationList), hd(tl(Data#rplServerData.randomLocationList))}}),
+  NewData = updateData(Data#rplServerData.nodeCount + 1, Data#rplServerData.rootCount,
+    tl(tl(Data#rplServerData.randomLocationList)), Data#rplServerData.msg_id, Data#rplServerData.messageList),
   {reply, {Pid, Ref}, NewData};
 
 % CALL from the GUI - to add a root node
 % Return to the GUI the Pid of the new node
 %TODO - handle REF
-handle_call({addNode, root}, _From, {NodeCount, RootCount, RandomLocationList}) ->
+handle_call({addNode, root}, _From, Data) ->
   io:format("myserver wants to add a root node~n"),
-  {_, Pid} = rootServer:start_link(RootCount),
+  {_, Pid} = rootServer:start_link(Data#rplServerData.rootCount),
   Ref = 0,
-%  {Pid, Ref} = spawn_monitor(rootLoop, loopStart, [RootCount]),
-  ets:insert(?NODE_LIST, {Pid, {Ref, hd(RandomLocationList), hd(tl(RandomLocationList))}}),
-  ets:insert(?ROOT_LIST, {Pid, {Ref, hd(RandomLocationList), hd(tl(RandomLocationList))}}),
-  NewData = {NodeCount + 1, RootCount + 1, tl(tl(RandomLocationList))},
-
+  ets:insert(?NODE_LIST, {Pid, {Ref, hd(Data#rplServerData.randomLocationList), hd(tl(Data#rplServerData.randomLocationList))}}),
+  ets:insert(?ROOT_LIST, {Pid, {Ref, hd(Data#rplServerData.randomLocationList), hd(tl(Data#rplServerData.randomLocationList))}}),
+  NewData = updateData(Data#rplServerData.nodeCount + 1, Data#rplServerData.rootCount + 1,
+    tl(tl(Data#rplServerData.randomLocationList)), Data#rplServerData.msg_id, Data#rplServerData.messageList),
   {reply, {Pid, Ref}, NewData}.
 
-%*** Nodes Locations ***%
+%*** BUILD NETWORK ***%
 
 % CAST from the GUI - request to send message from node A -> B
 % no reply to the GUI
 % server sends to all the roots to start building the network
-% After the network is ready -> try send a message
 handle_cast({buildNetwork}, Data) ->
   RootList = ets:tab2list(?ROOT_LIST),
   buildNetwork(RootList),
-  %From ! {message, To, Msg},
-%  sendLocations(RootList, Locations),
   {noreply, Data};
+
+% Symbols that the network got finished building.
+% Now Build the downward Digraph
+% When finished, need to send the message
+handle_cast({finishedBuilding}, Data) ->
+  RootList = ets:tab2list(?ROOT_LIST),
+  downwardDigraphBuild(RootList),
+  {noreply, Data};
+
+
+%*** BUILD DOWNWARD DIGRAPH ***%
 
 handle_cast({downwardDigraphBuild}, Data) ->
   RootList = ets:tab2list(?ROOT_LIST),
-  upwardDigraphBuild(RootList),
-  %From ! {message, To, Msg},
-%  sendLocations(RootList, Locations),
+  downwardDigraphBuild(RootList),
   {noreply, Data};
 
-%TODO - just for debug
+% Symbols that the downward digraph got finished building.
+% Now You can send the messages safetly
+handle_cast({finishedDigraphBuilding}, Data) ->
+  io:format("Can Send Message~n"),
+  printData(Data),
+  sendAllMessages(Data#rplServerData.messageList),
+  NewData = updateData(Data#rplServerData.nodeCount, Data#rplServerData.rootCount,
+    Data#rplServerData.randomLocationList, Data#rplServerData.msg_id, []),
+  {noreply, NewData};
+
+%*** SENDING MESSAGES ***%
+
+% UNICAST from the GUI - request to send message from node A -> B
+% Without building the network
+handle_cast({sendMessage, From, To, Msg}, Data) ->
+  gen_server:cast(From, {sendMessage, From, To, Msg}),
+  {noreply, Data};
+
+% UNICAST from the GUI - request to send message from node A -> B
+% roots start building the network
+% After the network is ready -> try send a message
+handle_cast({sendUnicastMessage, From, To, Msg}, Data) ->
+  RootList = ets:tab2list(?ROOT_LIST),
+  NewData = updateData(Data#rplServerData.nodeCount, Data#rplServerData.rootCount,
+    Data#rplServerData.randomLocationList, Data#rplServerData.msg_id + 1, Data#rplServerData.messageList ++
+    [#messageFormat{msgId = Data#rplServerData.msg_id + 1, from = From, to = To, msg = Msg}]),
+  buildNetwork(RootList),
+  {noreply, NewData};
+
+
+%*** DEBUG ***%
+
+% Just for debug
 handle_cast({getAllPath}, Data) ->
   RootList = ets:tab2list(rootList),
   getAllPath(RootList),
-  %upwardDigraphBuild(RootList),
-  %From ! {message, To, Msg},
-%  sendLocations(RootList, Locations),
-  {noreply, Data};
-
-% CAST from the GUI - request to send message from node A -> B
-% no reply to the GUI
-% server sends to all the roots to start building the network
-% After the network is ready -> try send a message
-handle_cast({sendMessage, From, To, Msg}, Data) ->
-  gen_server:cast(From, {sendMessage, From, To, Msg}),
-  %buildNetwork(RootList),
   {noreply, Data};
 
 %***************    CALLS FROM Nodes    *************%
@@ -154,23 +185,37 @@ code_change(_OldVsn, _State, _Extra) ->
 
 %******************   Utils Functions   ************
 
+% CAST Function
 % Send to all the roots to start build its DODAGs
 buildNetwork(RootList) ->
   lists:foreach(fun(Element) ->
-    gen_server:cast(element(1, Element), {buildNetwork})
-  %   element(1, Element) ! {buildNetwork}
-                end, RootList).
+    gen_server:cast(element(1, Element), {buildNetwork}) end, RootList).
 
 % Building from the roots the downwardDigraphBuild
-upwardDigraphBuild(RootList) ->
+downwardDigraphBuild(RootList) ->
   lists:foreach(fun(Element) ->
-    gen_server:cast(element(1, Element), {downwardDigraphBuild})
-%element(1, Element) ! {downwardDigraphBuild}
-                end, RootList).
+    gen_server:cast(element(1, Element), {downwardDigraphBuild}) end, RootList).
 
 % Just for Debug, Check all the Path Exist
 getAllPath(RootList) ->
   lists:foreach(fun(Element) ->
-    gen_server:cast(element(1, Element), {getAllPath})
-  %element(1, Element) ! {getAllPath}
-                end, RootList).
+    gen_server:cast(element(1, Element), {getAllPath}) end, RootList).
+
+% Returns the pid of the root list
+returnPidList([], RootAcc) -> RootAcc;
+returnPidList(RootList, RootAcc) ->
+  returnPidList(tl(RootList), [element(1, hd(RootList)) | RootAcc]).
+
+updateData(NodeCount, RootCount, RandomLocationList, Msg_ID, MessageList) ->
+  #rplServerData{nodeCount = NodeCount, rootCount = RootCount,
+    randomLocationList = RandomLocationList, msg_id = Msg_ID, messageList = MessageList}.
+
+printData(Data) ->
+  io:format("RootCount: ~p, NodeCount:~p, RandomList: ~p,Msg_id: ~p,MessageList= ~p~n", [Data#rplServerData.rootCount, Data#rplServerData.nodeCount,
+    Data#rplServerData.randomLocationList, Data#rplServerData.msg_id, Data#rplServerData.messageList]).
+
+sendAllMessages([]) -> [];
+sendAllMessages(MessageList) ->
+  Message = hd(MessageList),
+  gen_server:cast(Message#messageFormat.from, {sendMessage, Message#messageFormat.from, Message#messageFormat.to, Message#messageFormat.msg}),
+  sendAllMessages(tl(MessageList)).

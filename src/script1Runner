@@ -10,20 +10,23 @@ gen_server:cast(rplServer,{buildNetwork}).
 
 gen_server:cast(rplServer,{downwardDigraphBuild}).
 
+%***********    NORMAL MESSAGES     **********%
 %WITH PATH
-gen_server:cast(rplServer,{sendMessage, <0.123.0>,<0.125.0>,"HEY"}).
-gen_server:cast(rplServer,{sendMessage, <0.125.0>,<0.123.0>,"HEY"}).
-gen_server:cast(rplServer,{sendMessage, <0.126.0>,<0.123.0>,"HEY"}).
+gen_server:cast(rplServer,{sendUnicastMessage, <0.123.0>,<0.125.0>,"HEY"}).
+gen_server:cast(rplServer,{sendUnicastMessage, <0.125.0>,<0.123.0>,"HEY"}).
+gen_server:cast(rplServer,{sendUnicastMessage, <0.126.0>,<0.123.0>,"HEY"}).
 
 % To Root
-gen_server:cast(rplServer,{sendMessage, <0.126.0>,<0.122.0>,"HEY"}).
+gen_server:cast(rplServer,{sendUnicastMessage, <0.126.0>,<0.122.0>,"HEY"}).
+
 % From Root
-gen_server:cast(rplServer,{sendMessage, <0.122.0>,<0.126.0>,"HEY"}).
+gen_server:cast(rplServer,{sendUnicastMessage, <0.122.0>,<0.126.0>,"HEY"}).
 
 %WITHOUT PATH
-gen_server:cast(rplServer,{sendMessage, <0.127.0>,<0.126.0>,"HEY"}).
-gen_server:cast(rplServer,{sendMessage, <0.122.0>,<0.127.0>,"HEY"}).
-gen_server:cast(rplServer,{sendMessage, <0.127.0>,<0.122.0>,"HEY"}).
+gen_server:cast(rplServer,{sendUnicastMessage, <0.127.0>,<0.126.0>,"HEY"}).
+gen_server:cast(rplServer,{sendUnicastMessage, <0.122.0>,<0.127.0>,"HEY"}).
+gen_server:cast(rplServer,{sendUnicastMessage, <0.127.0>,<0.122.0>,"HEY"}).
+
 
 
 % Check Existence of Path

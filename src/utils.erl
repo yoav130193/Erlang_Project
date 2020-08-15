@@ -10,7 +10,7 @@
 -author("yoavlevy").
 
 %% API
--export([findMeAndNeighbors/1, findNeighbors/2, checkIfUpdateNeeded/4, requestParent/3, buildVertexDigraph/1, sendMessage/3, getDodagList/0, calculatePath/1,startSendDownward/4]).
+-export([findMeAndNeighbors/1, findNeighbors/2, checkIfUpdateNeeded/4, requestParent/3, buildVertexDigraph/1, sendMessage/3, deleteMessageFromEts/4, getDodagList/0, calculatePath/1, startSendDownward/4]).
 
 -define(dis, 100).
 -define(VERSION_RANK, version_rank).
@@ -20,6 +20,9 @@
 -define(DOWNWARD_DIGRAPH, downwardDigraph).
 -define(DOWNWARD_DIGRAPH_FILE, "downward_digraph_file.txt").
 -define(ROOT_SERVER, rootServer).
+-define(MSG_TABLE, msgTable).
+
+-record(msg_table_key, {dodagId, from, to}).
 
 %**************   FIND FRIENDS   **************%
 
@@ -69,14 +72,12 @@ checkWithPrev(NewVersion, NewRank, PrevVersion, PrevRank, From, DodagId) ->
 
 requestParent(From, DodagId, NodeList) ->
   lists:foreach(fun(Element) ->
-    gen_server:cast(element(1, Element), {requestParent, From, DodagId})
-  %   element(1, Element) ! {requestParent, From, DodagId}
-                end, NodeList).
+    ets:insert(?MSG_TABLE, {#msg_table_key{dodagId = DodagId, from = self(), to = element(1, Element)}, {msg}}),
+    gen_server:cast(element(1, Element), {requestParent, From, DodagId}) end, NodeList).
 
 % Add all the vertices to the Dodag, even the ones who aren't in the dodag
 buildVertexDigraph(NodeList) ->
   Graph = digraph:new(),
-  %LABEL = {DODAG_ID}
   lists:foreach(fun(Element) -> digraph:add_vertex(Graph, element(1, Element), {self()}) end, NodeList),
   Graph.
 
@@ -151,3 +152,12 @@ startSendDownward(From, To, Msg, MinDodagId) ->
   PathList = digraph:get_path(get(?DOWNWARD_DIGRAPH), self(), To),
   io:format("PathList: ~p~n", [PathList]),
   gen_server:cast(hd(PathList), {downwardMessage, From, To, Msg, MinDodagId, tl(PathList)}).
+
+
+deleteMessageFromEts(DodagId, From, To, Action) ->
+  ets:delete(?MSG_TABLE, #msg_table_key{dodagId = DodagId, from = From, to = To}),
+  case ets:tab2list(?MSG_TABLE) of
+    [] -> io:format("finish Building~n~n"),
+      gen_server:cast(rplServer, Action);
+    List -> io:format("not finished yet, list left: ~p~n", [List])
+  end.
