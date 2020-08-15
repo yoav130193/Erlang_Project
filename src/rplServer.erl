@@ -152,6 +152,15 @@ handle_cast({sendUnicastMessage, From, To, Msg}, Data) ->
   buildNetwork(RootList),
   {noreply, NewData};
 
+% MULTICAST from the GUI - request to send message from node A -> Group Of Nodes
+% roots start building the network
+% After the network is ready -> try send a message
+handle_cast({sendMulticastMessage, MessageList}, Data) ->
+  RootList = ets:tab2list(?ROOT_LIST),
+  NewData = addMessagesToData(MessageList, Data),
+  buildNetwork(RootList),
+  {noreply, NewData};
+
 
 %*** DEBUG ***%
 
@@ -219,3 +228,10 @@ sendAllMessages(MessageList) ->
   Message = hd(MessageList),
   gen_server:cast(Message#messageFormat.from, {sendMessage, Message#messageFormat.from, Message#messageFormat.to, Message#messageFormat.msg}),
   sendAllMessages(tl(MessageList)).
+
+addMessagesToData([], NewData) -> NewData;
+addMessagesToData(MessageList, NewData) ->
+  Message = hd(MessageList),
+  addMessagesToData(tl(MessageList), updateData(NewData#rplServerData.nodeCount, NewData#rplServerData.rootCount,
+    NewData#rplServerData.randomLocationList, NewData#rplServerData.msg_id + 1, NewData#rplServerData.messageList ++
+    [#messageFormat{msgId = NewData#rplServerData.msg_id + 1, from = Message#messageFormat.from, to = Message#messageFormat.to, msg = Message#messageFormat.msg}])).
