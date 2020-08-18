@@ -68,6 +68,7 @@ handle_cast({requestParent, From, DodagID}, {NodeCount, Mop}) ->
 %*****************    SENDING A MESSAGE     *****************%
 
 handle_cast({parentMsg, From, To, DodagID, Msg}, State) ->
+  io:format("parentMsg, DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p,  got to the root~n", [DodagID, self(), Msg, From, To]),
   gen_server:cast(get({?PARENT, DodagID}), {parentMsg, From, To, DodagID, Msg}),
   {noreply, State};
 

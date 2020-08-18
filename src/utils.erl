@@ -132,7 +132,7 @@ findMinimum(DodagIdList, To, From, {MinDodagId, MinDistance}) ->
 getDodagList() ->
   case get(?MY_DODAGs) of
     undefined -> % NEED TO UPDATE
-      io:format("NO DODAGLIST ~p~n", [self()]),
+      %  io:format("NO DODAGLIST ~p~n", [self()]),
       [];
     DodagList ->
       DodagList
@@ -159,5 +159,6 @@ deleteMessageFromEts(DodagId, From, To, Action) ->
   case ets:tab2list(?MSG_TABLE) of
     [] -> io:format("finish Building~n~n"),
       gen_server:cast(rplServer, Action);
-    List -> io:format("not finished yet, list left: ~p~n", [List])
+    List -> %io:format("not finished yet, list left: ~p~n", [List])
+      continue
   end.

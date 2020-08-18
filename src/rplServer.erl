@@ -51,7 +51,7 @@ start_link(Mop) -> gen_server:start_link({local, ?RPL_SERVER}, ?RPL_SERVER, [Mop
 % Initialize all information to start the program
 init(Mop) ->
   % FOR DEBUG ONLY
-  {ok, S} = file:open(?LOG_FILE_NAME, [append]),
+  {ok, S} = file:open(?LOG_FILE_NAME, [write]),
   io:format(S, "~s~n", ["{DODAG_ID,Message Type,From,To}"]),
   process_flag(trap_exit, true),
   io:format("rplServer init~n"),
@@ -63,7 +63,7 @@ init(Mop) ->
   NodeCount = 1,
   RootCount = 1,
   random:seed(1),
-  RandomLocationList = [random:uniform(200) || _ <- lists:seq(1, 50)],
+  RandomLocationList = [random:uniform(200) || _ <- lists:seq(1, 5000)],
   Data = #rplServerData{nodeCount = NodeCount, rootCount = RootCount, randomLocationList = RandomLocationList, msg_id = 0, messageList = []},
   {ok, Data}.
 
@@ -118,6 +118,7 @@ handle_cast({finishedBuilding}, Data) ->
 
 %*** BUILD DOWNWARD DIGRAPH ***%
 
+% Start Building the digraph
 handle_cast({downwardDigraphBuild}, Data) ->
   RootList = ets:tab2list(?ROOT_LIST),
   downwardDigraphBuild(RootList),
@@ -171,7 +172,6 @@ handle_cast({getAllPath}, Data) ->
   getAllPath(RootList),
   {noreply, Data};
 
-%***************    CALLS FROM Nodes    *************%
 
 
 %***************    Examples    *************%

@@ -18,7 +18,7 @@ script1() ->
   {_, ServerPid} = startAll(),
   io:format("My Server Pid: ~p~n", [ServerPid]),
   addMultipleNodes(ServerPid, root, 2),
-  addMultipleNodes(ServerPid, normal, 5),
+  addMultipleNodes(ServerPid, normal, 10),
   checkLists().
 
 startAll() ->
@@ -61,5 +61,5 @@ checkLists() ->
 
 randommmmm() ->
   random:seed(1),
-  [random:uniform(1000) || _ <- lists:seq(1, 50)].
+  [random:uniform(1000) || _ <- lists:seq(1, 5000)].
 

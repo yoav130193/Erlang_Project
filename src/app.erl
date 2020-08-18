@@ -9,5 +9,13 @@
 -module('app').
 -author("amir").
 
+-behavior(wx_object).
 %% API
--export([]).
+-export([init/1, handle_event/2]).
+
+
+init(Args) ->
+  erlang:error(not_implemented).
+
+handle_event(Request, State) ->
+  erlang:error(not_implemented).
