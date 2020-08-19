@@ -38,6 +38,9 @@
 -define(NODE_LIST, nodeList).
 -define(ROOT_LIST, rootList).
 -define(MOP, mop).
+-define(STORING, 0).
+-define(NON_STORING, 1).
+-define(RPL_REF, rplRef).
 
 -record(rplServerData, {nodeCount, rootCount, randomLocationList, msg_id, messageList}).
 -record(messageFormat, {msgId, from, to, msg}).
@@ -54,12 +57,13 @@ init(Mop) ->
   {ok, S} = file:open(?LOG_FILE_NAME, [write]),
   io:format(S, "~s~n", ["{DODAG_ID,Message Type,From,To}"]),
   process_flag(trap_exit, true),
-  io:format("rplServer init~n"),
+  io:format("rplServer init info: ~p~n", [erlang:make_ref()]),
   ets:new(?NODE_LIST, [set, named_table, public]),
   ets:new(?ROOT_LIST, [set, named_table, public]),
   ets:new(?MSG_TABLE, [set, named_table, public]),
   ets:new(?MOP, [set, named_table, public]),
-  ets:insert(mop, {mopKey, Mop}),
+  ets:new(?RPL_REF, [set, named_table, public]),
+  ets:insert(?MOP, {mopKey, Mop}),
   NodeCount = 1,
   RootCount = 1,
   random:seed(1),
@@ -128,7 +132,7 @@ handle_cast({downwardDigraphBuild}, Data) ->
 % Now You can send the messages safetly
 handle_cast({finishedDigraphBuilding}, Data) ->
   io:format("Can Send Message~n"),
-  printData(Data),
+  %printData(Data),
   sendAllMessages(Data#rplServerData.messageList),
   NewData = updateData(Data#rplServerData.nodeCount, Data#rplServerData.rootCount,
     Data#rplServerData.randomLocationList, Data#rplServerData.msg_id, []),
@@ -139,7 +143,10 @@ handle_cast({finishedDigraphBuilding}, Data) ->
 % UNICAST from the GUI - request to send message from node A -> B
 % Without building the network
 handle_cast({sendMessage, From, To, Msg}, Data) ->
-  gen_server:cast(From, {sendMessage, From, To, Msg}),
+  case ets:lookup(?MOP, mopKey) of
+    ?STORING -> gen_server:cast(From, {sendMessageStoring, From, To, Msg});
+    ?NON_STORING -> gen_server:cast(From, {sendMessageNonStoring, From, To, Msg})
+  end,
   {noreply, Data};
 
 % UNICAST from the GUI - request to send message from node A -> B
@@ -171,7 +178,6 @@ handle_cast({getAllPath}, Data) ->
   RootList = ets:tab2list(rootList),
   getAllPath(RootList),
   {noreply, Data};
-
 
 
 %***************    Examples    *************%
@@ -227,7 +233,8 @@ printData(Data) ->
 sendAllMessages([]) -> [];
 sendAllMessages(MessageList) ->
   Message = hd(MessageList),
-  gen_server:cast(Message#messageFormat.from, {sendMessage, Message#messageFormat.from, Message#messageFormat.to, Message#messageFormat.msg}),
+  Path = gen_server:call(Message#messageFormat.from, {sendMessageNonStoring, Message#messageFormat.from, Message#messageFormat.to, Message#messageFormat.msg}, 100000),
+  io:format("RPL Server:, Message, From: ~p, To: ~p , Path: ~p~n~n ", [Message#messageFormat.from, Message#messageFormat.to, Path]),
   sendAllMessages(tl(MessageList)).
 
 addMessagesToData([], NewData) -> NewData;

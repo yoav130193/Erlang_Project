@@ -18,7 +18,7 @@ script1() ->
   {_, ServerPid} = startAll(),
   io:format("My Server Pid: ~p~n", [ServerPid]),
   addMultipleNodes(ServerPid, root, 2),
-  addMultipleNodes(ServerPid, normal, 10),
+  addMultipleNodes(ServerPid, normal, 8),
   checkLists().
 
 startAll() ->

@@ -15,7 +15,8 @@ gen_server:cast(rplServer,{downwardDigraphBuild}).
 gen_server:cast(rplServer,{sendUnicastMessage, <0.123.0>,<0.125.0>,"HEY"}).
 gen_server:cast(rplServer,{sendUnicastMessage, <0.125.0>,<0.123.0>,"HEY"}).
 gen_server:cast(rplServer,{sendUnicastMessage, <0.126.0>,<0.123.0>,"HEY"}).
-gen_server:cast(rplServer,{sendUnicastMessage, <0.121.0>,<0.124.0>,"HEY"}).
+
+
 
 
 % To Root
@@ -25,10 +26,11 @@ gen_server:cast(rplServer,{sendUnicastMessage, <0.126.0>,<0.122.0>,"HEY"}).
 gen_server:cast(rplServer,{sendUnicastMessage, <0.122.0>,<0.126.0>,"HEY"}).
 
 %WITHOUT PATH
+gen_server:cast(rplServer,{sendUnicastMessage, <0.121.0>,<0.124.0>,"HEY"}).
+gen_server:cast(rplServer,{sendUnicastMessage, <0.124.0>,<0.121.0>,"HEY"}).
 gen_server:cast(rplServer,{sendUnicastMessage, <0.127.0>,<0.126.0>,"HEY"}).
-gen_server:cast(rplServer,{sendUnicastMessage, <0.122.0>,<0.127.0>,"HEY"}).
-gen_server:cast(rplServer,{sendUnicastMessage, <0.127.0>,<0.122.0>,"HEY"}).
 
+jj
 %***********    MULTICAST MESSAGES     **********%
 gen_server:cast(rplServer,{sendMulticastMessage,[{messageFormat,0,<0.123.0>,<0.125.0>,"HEY"},{messageFormat,0,<0.125.0>,<0.123.0>,"HEY"},
 {messageFormat,0,<0.127.0>,<0.122.0>,"HEY"}]}).

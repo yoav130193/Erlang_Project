@@ -24,6 +24,10 @@
 -define(DOWNWARD_DIGRAPH_FILE, "downward_digraph_file.txt").
 -define(ROOT_SERVER, rootServer).
 -define(MSG_TABLE, msgTable).
+-define(RPL_SERVER, rplServer).
+-define(RPL_REF, rplRef).
+
+
 
 -record(msg_table_key, {dodagId, from, to}).
 
@@ -104,35 +108,30 @@ handle_cast({giveParent, DodagID, From, Parent}, {RootCount, Version, Mop}) ->
 
 %*****************    SENDING A MESSAGE - CAST     *****************%
 
-handle_cast({sendMessage, From, To, Msg}, State) ->
-  utils:sendMessage(From, To, Msg),
+
+
+handle_cast({sendMessageStoring, From, To, Msg}, State) ->
+  utils:sendMessageStoring(From, To, Msg),
   {noreply, State};
 
-
-handle_cast({parentMsg, From, To, DodagID, Msg}, State) ->
+handle_cast({parentMsg, From, To, DodagID, Msg, PathToRoot}, State) ->
   MyPid = self(),
   case DodagID of
     MyPid ->
       if
         To =:= MyPid ->
-          io:format("Got the Msg!!! DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p~n", [DodagID, self(), Msg, From, To]);
+          io:format("Got the Msg!!! DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p Path:~p ~n", [DodagID, self(), Msg, From, To, PathToRoot ++ [self()]]),
+          gen_server:reply(element(2, hd(ets:lookup(?RPL_REF, ref))), PathToRoot ++ [self()]);
         true ->
           io:format("parentMsg, DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p,  got to the root~n", [DodagID, self(), Msg, From, To]),
-          utils:startSendDownward(From, To, Msg, DodagID)
+          utils:startSendDownward(From, To, Msg, DodagID, PathToRoot)
       end;
-    _ -> gen_server:cast(get({?PARENT, DodagID}), {parentMsg, From, To, DodagID, Msg})
+    _ -> gen_server:cast(get({?PARENT, DodagID}), {parentMsg, From, To, DodagID, Msg, PathToRoot ++ [self()]})
   end,
   {noreply, State};
 
-handle_cast({downwardMessage, From, To, Msg, DodagID, PathList}, State) ->
-  MyPid = self(),
-  case To of
-    MyPid ->
-      io:format("Got the Msg!!! DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p~n", [DodagID, self(), Msg, From, To]);
-    _ ->
-      io:format("downwardMessage, DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p~n", [DodagID, self(), Msg, From, To]),
-      gen_server:cast(hd(PathList), {downwardMessage, From, To, Msg, DodagID, tl(PathList)})
-  end,
+handle_cast({downwardMessage, From, To, Msg, DodagID, PathList, WholePath}, State) ->
+  utils:handleDownwardMessage(DodagID, Msg, From, To, WholePath, PathList),
   {noreply, State};
 
 
@@ -147,13 +146,19 @@ handle_cast({getAllPath}, State) ->
 %*****************    SENDING A MESSAGE - CALL     *****************%
 
 handle_call({calculateRoute, To}, From, State) ->
-  PathLength = utils:calculatePath(To),
-  io:format("calculateRoute, DODAGID: ~p, PathLength: ~p~n", [self(), PathLength]),
-  {reply, PathLength, State};
+  {Path, PathLength} = utils:calculatePath(To),
+  io:format("calculateRoute, DODAGID: ~p, Path: ~pPathLength: ~p~n", [self(), Path, PathLength]),
+  {reply, {Path, PathLength}, State};
 
 handle_call({hi}, From, State) ->
   io:format("Got hi: ~p~n", [self()]),
   {reply, cool, State};
+
+handle_call({sendMessageNonStoring, From, To, Msg}, OrderFrom, State) ->
+  ets:insert(?RPL_REF, {ref, OrderFrom}),
+  io:format("OrderFrom: ~p~n", [OrderFrom]),
+  utils:sendMessageNonStoring(From, To, Msg),
+  {noreply, State};
 
 handle_call(Request, From, State) ->
   erlang:error(not_implemented).

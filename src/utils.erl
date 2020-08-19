@@ -10,7 +10,7 @@
 -author("yoavlevy").
 
 %% API
--export([findMeAndNeighbors/1, findNeighbors/2, checkIfUpdateNeeded/4, requestParent/3, buildVertexDigraph/1, sendMessage/3, deleteMessageFromEts/4, getDodagList/0, calculatePath/1, startSendDownward/4]).
+-export([findMeAndNeighbors/1, handleDownwardMessage/6, findNeighbors/2, checkIfUpdateNeeded/4, requestParent/3, buildVertexDigraph/1, sendMessageNonStoring/3, sendMessageStoring/3, deleteMessageFromEts/4, getDodagList/0, calculatePath/1, startSendDownward/5]).
 
 -define(dis, 100).
 -define(VERSION_RANK, version_rank).
@@ -21,6 +21,9 @@
 -define(DOWNWARD_DIGRAPH_FILE, "downward_digraph_file.txt").
 -define(ROOT_SERVER, rootServer).
 -define(MSG_TABLE, msgTable).
+-define(RPL_SERVER, rplServer).
+-define(RPL_REF, rplRef).
+
 
 -record(msg_table_key, {dodagId, from, to}).
 
@@ -83,20 +86,26 @@ buildVertexDigraph(NodeList) ->
 
 %**************  SENDING MESSASGE   **************%
 
-sendMessage(From, To, Msg) ->
+sendMessageNonStoring(From, To, Msg) ->
   case checkBestRoute(From, To) of
-    {ok, MinDodagId, MinDistance, DodagIdList} ->
-      io:format("Best Dodag is: ~p , the distance is: ~p between all dodags:~p~n", [MinDodagId, MinDistance, DodagIdList]),
+    {ok, MinDodagId, MinDistance, MinPath, DodagIdList} ->
+      io:format("Best Dodag is: ~p , the distance is: ~p the path from the root is: ~p, between all dodags:~p~n", [MinDodagId, MinDistance, MinPath, DodagIdList]),
       if
         From =:= MinDodagId ->
-          startSendDownward(From, To, Msg, MinDodagId);
+          startSendDownward(From, To, Msg, MinDodagId, []);
         true ->
           Parent = get({?PARENT, MinDodagId}),
-          gen_server:cast(Parent, {parentMsg, From, To, MinDodagId, Msg})
+          gen_server:cast(Parent, {parentMsg, From, To, MinDodagId, Msg, []})
       end;
     {error, Reason} ->
-      io:format("NO ROUTE FROM:~p TO:~p~n", [From, To])
+      io:format("NO ROUTE FROM:~p TO:~p~n", [From, To]),
+      gen_server:reply(element(2, hd(ets:lookup(?RPL_REF, ref))), [])
+
+
   end.
+
+sendMessageStoring(From, To, Msg) ->
+  From.
 
 
 %TODO - fill this correctly
@@ -105,26 +114,26 @@ checkBestRoute(From, To) ->
   case DodagIdList of
     [] -> {error, noRoute};
     _ ->
-      io:format("finding the Minimum Path, From: ~p, To:~p: ,DodagList:~p~n", [From, To, DodagIdList]),
-      {MinDodagId, MinDistance} = findMinimum(DodagIdList, To, From, {100000, 100000}),
+      io:format("finding the Minimum Path, From: ~p, To: ~p ,DodagList: ~p~n", [From, To, DodagIdList]),
+      {MinDodagId, MinDistance, MinPath} = findMinimum(DodagIdList, To, From, {100000, 100000, []}),
       if
         MinDistance =:= 100000 -> {error, noRoute};
         true ->
-          {ok, MinDodagId, MinDistance, DodagIdList}
+          {ok, MinDodagId, MinDistance, MinPath, DodagIdList}
       end
   end.
 
-findMinimum([], To, From, {MinDodagId, MinDistance}) -> {MinDodagId, MinDistance};
-findMinimum(DodagIdList, To, From, {MinDodagId, MinDistance}) ->
+findMinimum([], To, From, {MinDodagId, MinDistance, MinPath}) -> {MinDodagId, MinDistance, MinPath};
+findMinimum(DodagIdList, To, From, {MinDodagId, MinDistance, MinPath}) ->
   if
-    From =:= hd(DodagIdList) -> Distance = calculatePath(To);
-    true -> Distance = gen_server:call(hd(DodagIdList), {calculateRoute, To})
+    From =:= hd(DodagIdList) -> {Path, Distance} = calculatePath(To);
+    true -> {Path, Distance} = gen_server:call(hd(DodagIdList), {calculateRoute, To})
   end,
   {_, Rank} = get({?VERSION_RANK, hd(DodagIdList)}),
   if
-    Distance =:= false -> findMinimum(tl(DodagIdList), To, From, {MinDodagId, MinDistance});
-    Distance + Rank < MinDistance -> findMinimum(tl(DodagIdList), To, From, {hd(DodagIdList), Distance + Rank});
-    true -> findMinimum(tl(DodagIdList), To, From, {MinDodagId, MinDistance})
+    Distance =:= false -> findMinimum(tl(DodagIdList), To, From, {MinDodagId, MinDistance, MinPath});
+    Distance + Rank < MinDistance -> findMinimum(tl(DodagIdList), To, From, {hd(DodagIdList), Distance + Rank, Path});
+    true -> findMinimum(tl(DodagIdList), To, From, {MinDodagId, MinDistance, MinPath})
   end.
 
 %**************  TODO - think about it   **************%
@@ -142,17 +151,27 @@ getDodagList() ->
 calculatePath(To) ->
   case digraph:get_path(get(?DOWNWARD_DIGRAPH), self(), To) of
     false -> if
-               To =:= self() -> 0;
-               true -> false
+               To =:= self() -> {self(), 0};
+               true -> {ok, false}
              end;
-    PathList -> length(PathList)
+    PathList -> {PathList, length(PathList)}
   end.
 
-startSendDownward(From, To, Msg, MinDodagId) ->
+startSendDownward(From, To, Msg, MinDodagId, Path) ->
   PathList = digraph:get_path(get(?DOWNWARD_DIGRAPH), self(), To),
-  io:format("PathList: ~p~n", [PathList]),
-  gen_server:cast(hd(PathList), {downwardMessage, From, To, Msg, MinDodagId, tl(PathList)}).
+  io:format("Me: ~p, PathList: ~p~n", [self(), PathList]),
+  gen_server:cast(hd(PathList), {downwardMessage, From, To, Msg, MinDodagId, tl(PathList), Path ++ [self()]}).
 
+handleDownwardMessage(DodagID, Msg, From, To, WholePath, PathList) ->
+  MyPid = self(),
+  case To of
+    MyPid ->
+      io:format("Got the Msg!!! DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p Path: ~p~n", [DodagID, self(), Msg, From, To, WholePath ++ [self()]]),
+      gen_server:reply(element(2, hd(ets:lookup(?RPL_REF, ref))), WholePath ++ [self()]);
+    _ ->
+      io:format("downwardMessage, DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p TempPath: ~p~n", [DodagID, self(), Msg, From, To, WholePath]),
+      gen_server:cast(hd(PathList), {downwardMessage, From, To, Msg, DodagID, tl(PathList), WholePath})
+  end.
 
 deleteMessageFromEts(DodagId, From, To, Action) ->
   ets:delete(?MSG_TABLE, #msg_table_key{dodagId = DodagId, from = From, to = To}),

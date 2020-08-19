@@ -21,6 +21,8 @@
 -define(PARENT, parent).
 -define(NODE_SERVER, nodeServer).
 -define(MSG_TABLE, msgTable).
+-define(RPL_REF, rplRef).
+
 
 -record(msg_table_key, {dodagId, from, to}).
 
@@ -67,24 +69,19 @@ handle_cast({requestParent, From, DodagID}, {NodeCount, Mop}) ->
 
 %*****************    SENDING A MESSAGE     *****************%
 
-handle_cast({parentMsg, From, To, DodagID, Msg}, State) ->
-  io:format("parentMsg, DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p,  got to the root~n", [DodagID, self(), Msg, From, To]),
-  gen_server:cast(get({?PARENT, DodagID}), {parentMsg, From, To, DodagID, Msg}),
+handle_cast({parentMsg, From, To, DodagID, Msg, PathToRoot}, State) ->
+  io:format("parentMsg, DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p~n", [DodagID, self(), Msg, From, To]),
+  gen_server:cast(get({?PARENT, DodagID}), {parentMsg, From, To, DodagID, Msg, PathToRoot ++ [self()]}),
   {noreply, State};
 
-handle_cast({sendMessage, From, To, Msg}, State) ->
-  utils:sendMessage(From, To, Msg),
+
+handle_cast({sendMessageStoring, From, To, Msg}, State) ->
+  utils:sendMessageStoring(From, To, Msg),
   {noreply, State};
 
-handle_cast({downwardMessage, From, To, Msg, DodagID, PathList}, State) ->
-  MyPid = self(),
-  case To of
-    MyPid ->
-      io:format("Got the Msg!!! DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p~n~n", [DodagID, self(), Msg, From, To]);
-    _ ->
-      io:format("downwardMessage, DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p~n", [DodagID, self(), Msg, From, To]),
-      gen_server:cast(hd(PathList), {downwardMessage, From, To, Msg, DodagID, tl(PathList)})
-  end,
+
+handle_cast({downwardMessage, From, To, Msg, DodagID, PathList, WholePath}, State) ->
+  utils:handleDownwardMessage(DodagID, Msg, From, To, WholePath, PathList),
   {noreply, State}.
 
 
@@ -92,6 +89,11 @@ terminate(_Reason, _State) ->
   io:format("nodeServer terminate~n"),
   [].
 
+handle_call({sendMessageNonStoring, From, To, Msg}, OrderFrom, State) ->
+  ets:insert(?RPL_REF, {ref, OrderFrom}),
+  io:format("OrderFrom: ~p~n", [OrderFrom]),
+  utils:sendMessageNonStoring(From, To, Msg),
+  {noreply, State};
 
 handle_call(Request, From, State) ->
   erlang:error(not_implemented).
