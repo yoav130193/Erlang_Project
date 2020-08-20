@@ -23,7 +23,8 @@
 -define(MSG_TABLE, msgTable).
 -define(RPL_SERVER, rplServer).
 -define(RPL_REF, rplRef).
-
+-define(STORING, 0).
+-define(NON_STORING, 1).
 
 -record(msg_table_key, {dodagId, from, to}).
 
@@ -149,7 +150,16 @@ getDodagList() ->
 
 
 calculatePath(To) ->
-  case digraph:get_path(get(?DOWNWARD_DIGRAPH), self(), To) of
+  Mop = element(2, hd(ets:lookup(mop, mopKey))),
+  case hd(Mop) of
+    ?NON_STORING ->
+      DownwardDigraph = digraph:get_path(get(?DOWNWARD_DIGRAPH), self(), To);
+    ?STORING ->
+      io:format("STORING 158~n"),
+      DownwardDigraph = digraph:get_path(element(2, hd(ets:lookup(?DOWNWARD_DIGRAPH, self()))), self(), To)
+  end,
+
+  case DownwardDigraph of
     false -> if
                To =:= self() -> {self(), 0};
                true -> {ok, false}
@@ -158,7 +168,12 @@ calculatePath(To) ->
   end.
 
 startSendDownward(From, To, Msg, MinDodagId, Path) ->
-  PathList = digraph:get_path(get(?DOWNWARD_DIGRAPH), self(), To),
+  case hd(element(2, hd(ets:lookup(mop, mopKey)))) of
+    ?NON_STORING ->
+      PathList = digraph:get_path(get(?DOWNWARD_DIGRAPH), self(), To);
+    ?STORING ->
+      PathList = digraph:get_path(element(2, hd(ets:lookup(?DOWNWARD_DIGRAPH, self()))), self(), To)
+  end,
   io:format("Me: ~p, PathList: ~p~n", [self(), PathList]),
   gen_server:cast(hd(PathList), {downwardMessage, From, To, Msg, MinDodagId, tl(PathList), Path ++ [self()]}).
 

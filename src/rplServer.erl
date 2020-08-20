@@ -33,6 +33,7 @@
 -define(NODE_SERVER, nodeServer).
 -define(ROOT_SERVER, rootServer).
 -define(MSG_TABLE, msgTable).
+-define(DOWNWARD_DIGRAPH, downwardDigraph).
 
 
 -define(NODE_LIST, nodeList).
@@ -63,6 +64,8 @@ init(Mop) ->
   ets:new(?MSG_TABLE, [set, named_table, public]),
   ets:new(?MOP, [set, named_table, public]),
   ets:new(?RPL_REF, [set, named_table, public]),
+  ets:new(?DOWNWARD_DIGRAPH, [set, named_table, public]),
+
   ets:insert(?MOP, {mopKey, Mop}),
   NodeCount = 1,
   RootCount = 1,
@@ -144,7 +147,9 @@ handle_cast({finishedDigraphBuilding}, Data) ->
 % Without building the network
 handle_cast({sendMessage, From, To, Msg}, Data) ->
   case ets:lookup(?MOP, mopKey) of
-    ?STORING -> gen_server:cast(From, {sendMessageStoring, From, To, Msg});
+    ?STORING ->
+      io:format("STORING 151~n"),
+      gen_server:cast(From, {sendMessageStoring, From, To, Msg});
     ?NON_STORING -> gen_server:cast(From, {sendMessageNonStoring, From, To, Msg})
   end,
   {noreply, Data};
