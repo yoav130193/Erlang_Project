@@ -48,6 +48,14 @@ init(RootCount) ->
 
 % Got message from rplServer -> start to build the network
 handle_cast({buildNetwork}, {RootCount, Version, Mop}) ->
+  NodeList = ets:tab2list(nodeList),
+  case hd(Mop) of
+    ?NON_STORING ->
+      put(?DOWNWARD_DIGRAPH, utils:buildVertexDigraph(NodeList));
+    ?STORING ->
+      io:format("STORING 87 DODAG_ID: ~p~n", [self()]),
+      ets:insert(?DOWNWARD_DIGRAPH, {self(), utils:buildVertexDigraph(NodeList)})
+  end,
   Rank = 0,
   put({?VERSION_RANK, self()}, {Version + 1, Rank}), % {Version, Rank}
   {MyNode, Neighbors} = utils:findMeAndNeighbors(self()), %Find My Process and My Neighbors Process
@@ -79,13 +87,13 @@ handle_cast({daoAckMsg, From, DaoAckMsg}, {RootCount, Version, Mop}) ->
 % rplServer called this function, Each Root starts to build the digraph
 handle_cast({downwardDigraphBuild}, {RootCount, Version, Mop}) ->
   NodeList = ets:tab2list(nodeList),
-  case hd(Mop) of
-    ?NON_STORING ->
-      put(?DOWNWARD_DIGRAPH, utils:buildVertexDigraph(NodeList));
-    ?STORING ->
-      io:format("STORING 87~n"),
-      ets:insert(?DOWNWARD_DIGRAPH, {self(), utils:buildVertexDigraph(NodeList)})
-  end,
+%%  case hd(Mop) of
+%%    ?NON_STORING ->
+%%      put(?DOWNWARD_DIGRAPH, utils:buildVertexDigraph(NodeList));
+%%    ?STORING ->
+%%      io:format("STORING 87~n"),
+%%      ets:insert(?DOWNWARD_DIGRAPH, {self(), utils:buildVertexDigraph(NodeList)})
+%%  end,
   io:format("root number: ~p Starts Building Downward Digraph~n~n", [RootCount]),
 % FROM,DODOAG, NodeList
   utils:requestParent(self(), self(), NodeList),
@@ -110,14 +118,16 @@ handle_cast({giveParent, DodagID, From, Parent}, {RootCount, Version, Mop}) ->
   case hd(Mop) of
     ?NON_STORING ->
       DownwardDigraph = get(?DOWNWARD_DIGRAPH),
-      io:format("NON-STORING 121 DownwardDigraph:~p ~n", [DownwardDigraph]),
+      io:format("add_edge NON-STORING 121- From: ~p To: ~p, DownwardDigraph: ~p~n", [Parent, From, DownwardDigraph]),
       digraph:add_edge(DownwardDigraph, Parent, From),
+      digraph:add_edge(DownwardDigraph, From, Parent),
       utils:deleteMessageFromEts(DodagID, self(), From, {finishedDigraphBuilding}),
       put(?DOWNWARD_DIGRAPH, DownwardDigraph);
     ?STORING ->
-      {A, DownwardDigraph} = hd(ets:lookup(?DOWNWARD_DIGRAPH, self())),  % Table = ?DOWNWARD_DIGRAPH , Key = DodagId
-      io:format("STORING 121 DownwardDigraph:~p ~n", [DownwardDigraph]),
+      {_, DownwardDigraph} = hd(ets:lookup(?DOWNWARD_DIGRAPH, self())),  % Table = ?DOWNWARD_DIGRAPH , Key = DodagId
+      io:format("add_edge STORING 127 - From: ~p To: ~p, DownwardDigraph: ~p~n", [Parent, From, DownwardDigraph]),
       digraph:add_edge(DownwardDigraph, Parent, From),
+      digraph:add_edge(DownwardDigraph, From, Parent),
       utils:deleteMessageFromEts(DodagID, self(), From, {finishedDigraphBuilding}),
       ets:insert(?DOWNWARD_DIGRAPH, {self(), DownwardDigraph})
   end,
@@ -154,10 +164,10 @@ handle_cast({downwardMessage, From, To, Msg, DodagID, PathList, WholePath}, Stat
 %*****************    DEBUG FUNCTIONS     *****************%
 
 
-handle_cast({getAllPath}, State) ->
+handle_cast({getAllPath}, {RootCount, Version, Mop}) ->
   NodeList = ets:tab2list(nodeList),
-  getAllPath(NodeList),
-  {noreply, State}.
+  getAllPath(NodeList, Mop),
+  {noreply, {RootCount, Version, Mop}}.
 
 %*****************    SENDING A MESSAGE - CALL     *****************%
 
@@ -173,7 +183,7 @@ handle_call({hi}, From, State) ->
 handle_call({sendMessageStoring, From, To, Msg}, OrderFrom, State) ->
   ets:insert(?RPL_REF, {ref, OrderFrom}),
   io:format("OrderFrom: ~p~n", [OrderFrom]),
-  utils:sendMessageNonStoring(From, To, Msg),
+  utils:sendMessageStoring(From, To, Msg),
   {noreply, State};
 
 
@@ -203,11 +213,16 @@ printAllEdges(NodeList) ->
                 end, NodeList).
 
 % GET ALL THE PATH FROM EACH NODE TO EACH NODE
-getAllPath(NodeList) ->
+getAllPath(NodeList, Mop) ->
   {ok, S} = file:open(?DOWNWARD_DIGRAPH_FILE, [append]),
   lists:foreach(fun(OutElement) ->
     lists:foreach(fun(InElement) ->
-      Vertices = digraph:get_path(get(?DOWNWARD_DIGRAPH), element(1, OutElement), element(1, InElement)),
+      case hd(Mop) of
+        ?STORING ->
+          Vertices = digraph:get_path(get(?DOWNWARD_DIGRAPH), element(1, OutElement), element(1, InElement));
+        ?NON_STORING ->
+          Vertices = digraph:get_path(get(?DOWNWARD_DIGRAPH), element(1, OutElement), element(1, InElement))
+      end,
       io:format(S, "DODAG_ID: ~p, From: ~p, TO: ~p, Path: ~p~n",
         [self(), element(1, OutElement), element(1, InElement), Vertices])
                   end, NodeList)

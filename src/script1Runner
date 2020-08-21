@@ -13,8 +13,10 @@ gen_server:cast(rplServer,{downwardDigraphBuild}).
 %***********    UNICAST MESSAGES     **********%
 %WITH PATH
 gen_server:cast(rplServer,{sendUnicastMessage, <0.123.0>,<0.125.0>,"HEY"}).
-gen_server:cast(rplServer,{sendUnicastMessage, <0.125.0>,<0.123.0>,"HEY"}).
-gen_server:cast(rplServer,{sendUnicastMessage, <0.126.0>,<0.123.0>,"HEY"}).
+gen_server:cast(rplServer,{sendUnicastMessage, <0.125.0>,<0.126.0>,"HEY"}).
+gen_server:cast(rplServer,{sendUnicastMessage, <0.124.0>,<0.123.0>,"HEY"}).
+gen_server:cast(rplServer,{sendUnicastMessage, <0.124.0>,<0.126.0>,"HEY"}).
+
 
 
 

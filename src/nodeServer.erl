@@ -74,12 +74,6 @@ handle_cast({parentMsg, From, To, DodagID, Msg, PathToRoot}, State) ->
   gen_server:cast(get({?PARENT, DodagID}), {parentMsg, From, To, DodagID, Msg, PathToRoot ++ [self()]}),
   {noreply, State};
 
-
-handle_cast({sendMessageStoring, From, To, Msg}, State) ->
-  utils:sendMessageStoring(From, To, Msg),
-  {noreply, State};
-
-
 handle_cast({downwardMessage, From, To, Msg, DodagID, PathList, WholePath}, State) ->
   utils:handleDownwardMessage(DodagID, Msg, From, To, WholePath, PathList),
   {noreply, State}.
@@ -88,6 +82,13 @@ handle_cast({downwardMessage, From, To, Msg, DodagID, PathList, WholePath}, Stat
 terminate(_Reason, _State) ->
   io:format("nodeServer terminate~n"),
   [].
+
+handle_call({sendMessageStoring, From, To, Msg}, OrderFrom, State) ->
+  ets:insert(?RPL_REF, {ref, OrderFrom}),
+  io:format("OrderFrom: ~p~n", [OrderFrom]),
+  utils:sendMessageStoring(From, To, Msg),
+  {noreply, State};
+
 
 handle_call({sendMessageNonStoring, From, To, Msg}, OrderFrom, State) ->
   ets:insert(?RPL_REF, {ref, OrderFrom}),

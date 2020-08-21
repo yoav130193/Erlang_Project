@@ -101,15 +101,21 @@ sendMessageNonStoring(From, To, Msg) ->
     {error, Reason} ->
       io:format("NO ROUTE FROM:~p TO:~p~n", [From, To]),
       gen_server:reply(element(2, hd(ets:lookup(?RPL_REF, ref))), [])
-
-
   end.
 
 sendMessageStoring(From, To, Msg) ->
-  From.
+  case checkBestRouteStoring(From, To) of
+    {ok, MinDodagId, MinDistance, MinPath, DodagIdList} ->
+      io:format("Best Dodag is: ~p , the distance is: ~p the path from the root is: ~p, between all dodags:~p~n", [MinDodagId, MinDistance, MinPath, DodagIdList]),
+      gen_server:cast(hd(MinPath), {downwardMessage, From, To, Msg, MinDodagId, tl(MinPath), []});
+    % startSendDownward(From, To, Msg, MinDodagId, []);
+    {error, Reason} ->
+      io:format("NO ROUTE FROM:~p TO:~p~n", [From, To]),
+      gen_server:reply(element(2, hd(ets:lookup(?RPL_REF, ref))), [])
+  end.
 
 
-%TODO - fill this correctly
+% Checks the best route for Non-Storing mode
 checkBestRoute(From, To) ->
   DodagIdList = getDodagList(),
   case DodagIdList of
@@ -124,6 +130,22 @@ checkBestRoute(From, To) ->
       end
   end.
 
+% Checks the best route for Storing mode
+checkBestRouteStoring(From, To) ->
+  DodagIdList = getDodagList(),
+  case DodagIdList of
+    [] -> {error, noRoute};
+    _ ->
+      {MinDodagId, MinDistance, MinPath} = findMinimumStoring(DodagIdList, To, From, {100000, 100000, []}),
+      io:format("Minimum Path: ~p, From: ~p, To: ~p ,DodagList: ~p~n", [MinPath, From, To, DodagIdList]),
+      if
+        MinDistance =:= 100000 -> {error, noRoute};
+        true ->
+          {ok, MinDodagId, MinDistance, MinPath, DodagIdList}
+      end
+  end.
+
+% Find Minimum path at non-storing mode
 findMinimum([], To, From, {MinDodagId, MinDistance, MinPath}) -> {MinDodagId, MinDistance, MinPath};
 findMinimum(DodagIdList, To, From, {MinDodagId, MinDistance, MinPath}) ->
   if
@@ -135,6 +157,21 @@ findMinimum(DodagIdList, To, From, {MinDodagId, MinDistance, MinPath}) ->
     Distance =:= false -> findMinimum(tl(DodagIdList), To, From, {MinDodagId, MinDistance, MinPath});
     Distance + Rank < MinDistance -> findMinimum(tl(DodagIdList), To, From, {hd(DodagIdList), Distance + Rank, Path});
     true -> findMinimum(tl(DodagIdList), To, From, {MinDodagId, MinDistance, MinPath})
+  end.
+
+% Find Minimum path at storing mode
+findMinimumStoring([], To, From, {MinDodagId, MinDistance, MinPath}) -> {MinDodagId, MinDistance, MinPath};
+findMinimumStoring(DodagIdList, To, From, {MinDodagId, MinDistance, MinPath}) ->
+  if
+    From =:= hd(DodagIdList) -> {Path, Distance} = calculatePath(To);
+    true ->
+      Path = digraph:get_path(element(2, hd(ets:lookup(?DOWNWARD_DIGRAPH, hd(DodagIdList)))), self(), To),
+      Distance = length(Path)
+  end,
+  if
+    Distance =:= false -> findMinimumStoring(tl(DodagIdList), To, From, {MinDodagId, MinDistance, MinPath});
+    Distance < MinDistance -> findMinimumStoring(tl(DodagIdList), To, From, {hd(DodagIdList), Distance, Path});
+    true -> findMinimumStoring(tl(DodagIdList), To, From, {MinDodagId, MinDistance, MinPath})
   end.
 
 %**************  TODO - think about it   **************%
@@ -172,7 +209,7 @@ startSendDownward(From, To, Msg, MinDodagId, Path) ->
     ?NON_STORING ->
       PathList = digraph:get_path(get(?DOWNWARD_DIGRAPH), self(), To);
     ?STORING ->
-      PathList = digraph:get_path(element(2, hd(ets:lookup(?DOWNWARD_DIGRAPH, self()))), self(), To)
+      PathList = digraph:get_path(element(2, hd(ets:lookup(?DOWNWARD_DIGRAPH, MinDodagId))), self(), To)
   end,
   io:format("Me: ~p, PathList: ~p~n", [self(), PathList]),
   gen_server:cast(hd(PathList), {downwardMessage, From, To, Msg, MinDodagId, tl(PathList), Path ++ [self()]}).
@@ -196,3 +233,6 @@ deleteMessageFromEts(DodagId, From, To, Action) ->
     List -> %io:format("not finished yet, list left: ~p~n", [List])
       continue
   end.
+
+
+

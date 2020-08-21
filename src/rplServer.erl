@@ -135,7 +135,6 @@ handle_cast({downwardDigraphBuild}, Data) ->
 % Now You can send the messages safetly
 handle_cast({finishedDigraphBuilding}, Data) ->
   io:format("Can Send Message~n"),
-  %printData(Data),
   sendAllMessages(Data#rplServerData.messageList),
   NewData = updateData(Data#rplServerData.nodeCount, Data#rplServerData.rootCount,
     Data#rplServerData.randomLocationList, Data#rplServerData.msg_id, []),
@@ -238,7 +237,12 @@ printData(Data) ->
 sendAllMessages([]) -> [];
 sendAllMessages(MessageList) ->
   Message = hd(MessageList),
-  Path = gen_server:call(Message#messageFormat.from, {sendMessageNonStoring, Message#messageFormat.from, Message#messageFormat.to, Message#messageFormat.msg}, 100000),
+  case hd(element(2, hd(ets:lookup(mop, mopKey)))) of
+    ?STORING ->
+      Path = gen_server:call(Message#messageFormat.from, {sendMessageStoring, Message#messageFormat.from, Message#messageFormat.to, Message#messageFormat.msg}, 100000);
+    ?NON_STORING ->
+      Path = gen_server:call(Message#messageFormat.from, {sendMessageNonStoring, Message#messageFormat.from, Message#messageFormat.to, Message#messageFormat.msg}, 100000)
+  end,
   io:format("RPL Server:, Message, From: ~p, To: ~p , Path: ~p~n~n ", [Message#messageFormat.from, Message#messageFormat.to, Path]),
   sendAllMessages(tl(MessageList)).
 

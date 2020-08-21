@@ -16,7 +16,10 @@
 -define(VERSION_RANK, version_rank).
 -define(PARENT, parent).
 -define(MY_DODAGs, my_Dodags).
+-define(DOWNWARD_DIGRAPH, downwardDigraph).
 -define(MSG_TABLE, msgTable).
+-define(STORING, 0).
+-define(NON_STORING, 1).
 
 -record(msg_table_key, {dodagId, from, to}).
 
@@ -89,7 +92,6 @@ sendDaoAckAfterDao(From, To, DodagId, State) ->
 
 
 handleDaoAck({From, DaoAckMsg}, {RootCount, Version, Mop}) ->
-  % DodagID = DaoAckMsg#daoAckMsg.dodagId,
   addToDodagList(DaoAckMsg#daoAckMsg.dodagId),
   put({?PARENT, DaoAckMsg#daoAckMsg.dodagId}, From), % Update Parent
   {NewVersion, Rank} = get({?VERSION_RANK, DaoAckMsg#daoAckMsg.dodagId}),
