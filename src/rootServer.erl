@@ -13,8 +13,8 @@
 -export([init/1, handle_call/3, handle_cast/2, terminate/2, start_link/1]).
 
 -record(dioMsg, {rplInstanceId, versionNumber, rank, g = 2#1, zero = 2#0, mop, prf = 2#000, dtsn, flags = 16#00, reserved = 16#00, dodagId}).
--record(daoMsg, {rplInstanceId, k = 2#1, d = 2#1, flags = 8#00, reserved = 16#00, daoSequence, dodagId}).
--record(daoAckMsg, {rplInstanceId, d = 2#1, reserved = 2#0000000, daoSequence, status = 16#01, dodagId}).
+-record(daoMsg, {rplInstanceId, k = 2#1, d = 2#1, flags = 8#00, reserved = 16#00, daoSequence, dodagId, updateType}).
+-record(daoAckMsg, {rplInstanceId, d = 2#1, reserved = 2#0000000, daoSequence, status = 16#01, dodagId, updateType}).
 
 
 -define(MY_DODAGs, my_Dodags).
@@ -33,15 +33,15 @@
 
 -record(msg_table_key, {dodagId, from, to}).
 
-start_link(RootCount) ->
-  gen_server:start_link({local, list_to_atom("root_server" ++ integer_to_list(RootCount))}, ?ROOT_SERVER, [RootCount], []).
+start_link({RootCount, Mop}) ->
+  gen_server:start_link({local, list_to_atom("root_server" ++ integer_to_list(RootCount))}, ?ROOT_SERVER, [{RootCount, Mop}], []).
 
-init(RootCount) ->
-  io:format("new root number: ~p~n ", [RootCount]),
+init([{RootCount, Mop}]) ->
+  io:format("new root number: ~p Mop: ~p~n ", [RootCount, Mop]),
   put(?MY_DODAGs, [self()]),
   % ets:new(hi, [set, public]),
   Version = 0,
-  Mop = element(2, hd(ets:lookup(mop, mopKey))),
+  % Mop = element(2, hd(ets:lookup(mop, mopKey))),
   {ok, {RootCount, Version, Mop}}.
 
 %****************     RPL PROTOCOL MESSAGES     *****************%
@@ -72,7 +72,7 @@ handle_cast({dioMsg, From, DioMsg}, State) ->
 %TODO - HALF implemented.. Think if need to send to an other root message
 %Got Dao message from a node that got DIO -> root needs to send dao-ack back, update the childrenList and upward digraph
 handle_cast({daoMsg, From, DaoMsg}, State) ->
-  rpl_msg:sendDaoAckAfterDao(self(), From, DaoMsg#daoMsg.dodagId, State),
+  rpl_msg:sendDaoAckAfterDao(self(), From, DaoMsg#daoMsg.dodagId, DaoMsg#daoMsg.updateType, State),
   {noreply, State};
 
 % Got From ACK on his DAO message, Distribute the network
@@ -87,13 +87,6 @@ handle_cast({daoAckMsg, From, DaoAckMsg}, {RootCount, Version, Mop}) ->
 % rplServer called this function, Each Root starts to build the digraph
 handle_cast({downwardDigraphBuild}, {RootCount, Version, Mop}) ->
   NodeList = ets:tab2list(nodeList),
-%%  case hd(Mop) of
-%%    ?NON_STORING ->
-%%      put(?DOWNWARD_DIGRAPH, utils:buildVertexDigraph(NodeList));
-%%    ?STORING ->
-%%      io:format("STORING 87~n"),
-%%      ets:insert(?DOWNWARD_DIGRAPH, {self(), utils:buildVertexDigraph(NodeList)})
-%%  end,
   io:format("root number: ~p Starts Building Downward Digraph~n~n", [RootCount]),
 % FROM,DODOAG, NodeList
   utils:requestParent(self(), self(), NodeList),
@@ -105,42 +98,32 @@ handle_cast({downwardDigraphBuild}, {RootCount, Version, Mop}) ->
 handle_cast({requestParent, From, DodagID}, {RootCount, Version, Mop}) ->
   case get({?PARENT, DodagID}) of
     undefined -> % NEED TO UPDATE
-      io:format("requestParent, UNDEFIEND, DodagID: ~p node: ~p got from :~p~n", [DodagID, self(), From]),
-      utils:deleteMessageFromEts(DodagID, From, self(), {finishedDigraphBuilding});
-    Parent ->
-      gen_server:cast(From, {giveParent, DodagID, self(), Parent})
+      utils:deleteMessageFromEts(DodagID, From, self(), {finishedDigraphBuilding}, requestParentRoot);
+    ParentList ->
+      gen_server:cast(From, {giveParent, DodagID, self(), ParentList})
   end,
   {noreply, {RootCount, Version, Mop}};
 
 % Some node gave his parent, now we can build the edge between them
-handle_cast({giveParent, DodagID, From, Parent}, {RootCount, Version, Mop}) ->
-  io:format("giveParent, DodagID: ~p myNode: ~p Child: ~p Parent: ~p~n", [DodagID, self(), From, Parent]),
+handle_cast({giveParent, DodagID, From, ParentList}, {RootCount, Version, Mop}) ->
   case hd(Mop) of
     ?NON_STORING ->
       DownwardDigraph = get(?DOWNWARD_DIGRAPH),
-      io:format("add_edge NON-STORING 121- From: ~p To: ~p, DownwardDigraph: ~p~n", [Parent, From, DownwardDigraph]),
-      digraph:add_edge(DownwardDigraph, Parent, From),
-      digraph:add_edge(DownwardDigraph, From, Parent),
-      utils:deleteMessageFromEts(DodagID, self(), From, {finishedDigraphBuilding}),
-      put(?DOWNWARD_DIGRAPH, DownwardDigraph);
+      NewDownwardDigraph = addParentsList(DownwardDigraph, From, ParentList, DodagID),
+      utils:deleteMessageFromEts(DodagID, self(), From, {finishedDigraphBuilding}, giveParentRoot),
+      put(?DOWNWARD_DIGRAPH, NewDownwardDigraph);
     ?STORING ->
       {_, DownwardDigraph} = hd(ets:lookup(?DOWNWARD_DIGRAPH, self())),  % Table = ?DOWNWARD_DIGRAPH , Key = DodagId
-      io:format("add_edge STORING 127 - From: ~p To: ~p, DownwardDigraph: ~p~n", [Parent, From, DownwardDigraph]),
-      digraph:add_edge(DownwardDigraph, Parent, From),
-      digraph:add_edge(DownwardDigraph, From, Parent),
-      utils:deleteMessageFromEts(DodagID, self(), From, {finishedDigraphBuilding}),
-      ets:insert(?DOWNWARD_DIGRAPH, {self(), DownwardDigraph})
+      NewDownwardDigraph = addParentsList(DownwardDigraph, From, ParentList, DodagID),
+      utils:deleteMessageFromEts(DodagID, self(), From, {finishedDigraphBuilding}, giveParentRoot),
+      ets:insert(?DOWNWARD_DIGRAPH, {self(), NewDownwardDigraph})
   end,
 
   {noreply, {RootCount, Version, Mop}};
 
 %*****************    SENDING A MESSAGE - CAST     *****************%
 
-
-
-
-
-handle_cast({parentMsg, From, To, DodagID, Msg, PathToRoot}, State) ->
+handle_cast({parentMsg, From, To, DodagID, Msg, PathToRoot}, {RootCount, Version, Mop}) ->
   MyPid = self(),
   case DodagID of
     MyPid ->
@@ -149,12 +132,12 @@ handle_cast({parentMsg, From, To, DodagID, Msg, PathToRoot}, State) ->
           io:format("Got the Msg ! ! ! DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p Path:~p ~n", [DodagID, self(), Msg, From, To, PathToRoot ++ [self()]]),
           gen_server:reply(element(2, hd(ets:lookup(?RPL_REF, ref))), PathToRoot ++ [self()]);
         true ->
-          io:format("parentMsg, DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p, got to the root~n", [DodagID, self(), Msg, From, To]),
-          utils:startSendDownward(From, To, Msg, DodagID, PathToRoot)
+          io:format("parentMsg - root, DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p, PathToRoot: ~p~n", [DodagID, self(), Msg, From, To, PathToRoot]),
+          utils:startSendMessageDownward(From, To, Msg, DodagID, PathToRoot, Mop)
       end;
-    _ -> gen_server:cast(get({?PARENT, DodagID}), {parentMsg, From, To, DodagID, Msg, PathToRoot ++ [self()]})
+    _ -> gen_server:cast(hd(get({?PARENT, DodagID})), {parentMsg, From, To, DodagID, Msg, PathToRoot ++ [self()]})
   end,
-  {noreply, State};
+  {noreply, {RootCount, Version, Mop}};
 
 handle_cast({downwardMessage, From, To, Msg, DodagID, PathList, WholePath}, State) ->
   utils:handleDownwardMessage(DodagID, Msg, From, To, WholePath, PathList),
@@ -171,27 +154,27 @@ handle_cast({getAllPath}, {RootCount, Version, Mop}) ->
 
 %*****************    SENDING A MESSAGE - CALL     *****************%
 
-handle_call({calculateRoute, To}, From, State) ->
-  {Path, PathLength} = utils:calculatePath(To),
+handle_call({calculateRoute, To}, From, {RootCount, Version, Mop}) ->
+  {Path, PathLength} = utils:calculatePath(To, Mop, self()),
   io:format("calculateRoute, DODAGID: ~p, Path: ~pPathLength: ~p~n", [self(), Path, PathLength]),
-  {reply, {Path, PathLength}, State};
+  {reply, {Path, PathLength}, {RootCount, Version, Mop}};
 
 handle_call({hi}, From, State) ->
   io:format("Got hi: ~p~n", [self()]),
   {reply, cool, State};
 
-handle_call({sendMessageStoring, From, To, Msg}, OrderFrom, State) ->
+handle_call({sendMessageStoring, From, To, Msg}, OrderFrom, {RootCount, Version, Mop}) ->
   ets:insert(?RPL_REF, {ref, OrderFrom}),
   io:format("OrderFrom: ~p~n", [OrderFrom]),
-  utils:sendMessageStoring(From, To, Msg),
-  {noreply, State};
+  utils:sendMessageStoring(From, To, Msg, Mop),
+  {noreply, {RootCount, Version, Mop}};
 
 
-handle_call({sendMessageNonStoring, From, To, Msg}, OrderFrom, State) ->
+handle_call({sendMessageNonStoring, From, To, Msg}, OrderFrom, {RootCount, Version, Mop}) ->
   ets:insert(?RPL_REF, {ref, OrderFrom}),
   io:format("OrderFrom: ~p~n", [OrderFrom]),
-  utils:sendMessageNonStoring(From, To, Msg),
-  {noreply, State};
+  utils:sendMessageNonStoring(From, To, Msg, Mop),
+  {noreply, {RootCount, Version, Mop}};
 
 handle_call(Request, From, State) ->
   erlang:error(not_implemented).
@@ -219,9 +202,10 @@ getAllPath(NodeList, Mop) ->
     lists:foreach(fun(InElement) ->
       case hd(Mop) of
         ?STORING ->
-          Vertices = digraph:get_path(get(?DOWNWARD_DIGRAPH), element(1, OutElement), element(1, InElement));
+          {_, DownwardDigraph} = hd(ets:lookup(?DOWNWARD_DIGRAPH, self())),
+          Vertices = digraph:get_short_path(DownwardDigraph, element(1, OutElement), element(1, InElement));
         ?NON_STORING ->
-          Vertices = digraph:get_path(get(?DOWNWARD_DIGRAPH), element(1, OutElement), element(1, InElement))
+          Vertices = digraph:get_short_path(get(?DOWNWARD_DIGRAPH), element(1, OutElement), element(1, InElement))
       end,
       io:format(S, "DODAG_ID: ~p, From: ~p, TO: ~p, Path: ~p~n",
         [self(), element(1, OutElement), element(1, InElement), Vertices])
@@ -229,3 +213,10 @@ getAllPath(NodeList, Mop) ->
                 end, NodeList).
 
 
+addParentsList(DownwardDigraph, From, ParentList, DodagID) ->
+  lists:foreach(fun(Parent) ->
+    io:format("add_edge -DodagID: ~p, Me: ~p,  Parent: ~p Child: ~p~n", [DodagID, self(), Parent, From]),
+    digraph:add_edge(DownwardDigraph, Parent, From),
+    digraph:add_edge(DownwardDigraph, From, Parent)
+                end, ParentList),
+  DownwardDigraph.

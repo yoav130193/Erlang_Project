@@ -10,7 +10,7 @@
 -author("yoavlevy").
 
 %% API
--export([sendDioToNeighbors/6, sendDaoAfterDio/4, sendDaoAckAfterDao/4, handleDaoAck/2, handleDioMsg/3]).
+-export([sendDioToNeighbors/6, sendDaoAfterDio/5, sendDaoAckAfterDao/5, handleDaoAck/2, handleDioMsg/3, getParents/1]).
 
 -define(LOG_FILE_NAME, "my_log_file.txt").
 -define(VERSION_RANK, version_rank).
@@ -20,6 +20,10 @@
 -define(MSG_TABLE, msgTable).
 -define(STORING, 0).
 -define(NON_STORING, 1).
+
+-define(Update, 0).
+-define(Update_NO, 1).
+-define(Update_Addition, 2).
 
 -record(msg_table_key, {dodagId, from, to}).
 
@@ -48,44 +52,42 @@ sendDioToNeighbors(Pid, DodagId, Rank, Version, Mop, Neighbors) ->
 handleDioMsg(DioMsg, From, State) ->
   UpdateNeeded = utils:checkIfUpdateNeeded(DioMsg#dioMsg.dodagId, DioMsg#dioMsg.versionNumber, DioMsg#dioMsg.rank + 1, From),
   if
-    UpdateNeeded =:= true -> % Update rank and version -> send back DAO message
+    UpdateNeeded =:= ?Update -> % Update rank and version -> send back DAO message
       put({?VERSION_RANK, DioMsg#dioMsg.dodagId}, {DioMsg#dioMsg.versionNumber, DioMsg#dioMsg.rank + 1}),
-      rpl_msg:sendDaoAfterDio(self(), From, DioMsg#dioMsg.dodagId, State);
+      rpl_msg:sendDaoAfterDio(self(), From, DioMsg#dioMsg.dodagId, ?Update, State);
+    UpdateNeeded =:= ?Update_Addition ->
+      rpl_msg:sendDaoAfterDio(self(), From, DioMsg#dioMsg.dodagId, ?Update_Addition, State);
+  %utils:deleteMessageFromEts(DioMsg#dioMsg.dodagId, From, self(), {finishedBuilding}, dio);
     true ->
-      utils:deleteMessageFromEts(DioMsg#dioMsg.dodagId, From, self(), {finishedBuilding})
-  % rpl_msg:noNeedToUpdateToFile(self(), From, DioMsg#dioMsg.dodagId)
+      utils:deleteMessageFromEts(DioMsg#dioMsg.dodagId, From, self(), {finishedBuilding}, dio)
   end.
 
 % ***********   DAO MSG   ***********%
 
--record(daoMsg, {rplInstanceId, k = 2#1, d = 2#1, flags = 8#00, reserved = 16#00, daoSequence, dodagId}).
+-record(daoMsg, {rplInstanceId, k = 2#1, d = 2#1, flags = 8#00, reserved = 16#00, daoSequence, dodagId, updateType}).
 
 %DAO Destination Advertisment Object)
 % unicast message from all the node to the root, this message is a request to join the DODAG
-% TODO - check if the destination is only the root and if it always happens after DIO
-daoMsg(Dodag) ->
-  %TODO - implement all of the following:
-  #daoMsg{rplInstanceId = 0, daoSequence = 0, dodagId = Dodag}.
+daoMsg(DodagId, UpdateType) ->
+  #daoMsg{rplInstanceId = 0, daoSequence = 0, dodagId = DodagId, updateType = UpdateType}.
 
-sendDaoAfterDio(From, To, DodagId, State) ->
-  DaoMsg = daoMsg(DodagId),
-  %io:format("DODAG_ID: ~p, DAO message from: ~p to: ~p~nmsg:~p~n~n", [DodagId, From, To, DaoMsg]),
+sendDaoAfterDio(From, To, DodagId, UpdateType, State) ->
+  DaoMsg = daoMsg(DodagId, UpdateType),
   %saveDaoToFile(From, To, DodagId),
   gen_server:cast(To, {daoMsg, From, DaoMsg}).
 
 
 % ***********   DAO ACK MSG   ***********%
 
--record(daoAckMsg, {rplInstanceId, d = 2#1, reserved = 2#0000000, daoSequence, status = 16#01, dodagId}).
+-record(daoAckMsg, {rplInstanceId, d = 2#1, reserved = 2#0000000, daoSequence, status = 16#01, dodagId, updateType}).
 
 % DAO acknowledge
 % After receiving a DAO message, the root sends an ack message that confirms that the node accepted in to the DODAG
-% TODO - Understand if besides root , other nodes sends this message. If yes, the response is different
-daoAckMsg(Dodag) ->
-  #daoAckMsg{rplInstanceId = 0, daoSequence = 0, dodagId = Dodag}.
+daoAckMsg(Dodag, UpdateType) ->
+  #daoAckMsg{rplInstanceId = 0, daoSequence = 0, dodagId = Dodag, updateType = UpdateType}.
 
-sendDaoAckAfterDao(From, To, DodagId, State) ->
-  DaoAckMsg = daoAckMsg(DodagId),
+sendDaoAckAfterDao(From, To, DodagId, UpdateType, State) ->
+  DaoAckMsg = daoAckMsg(DodagId, UpdateType),
 %  io:format("DODAG_ID: ~p,DAO-ACK message from: ~p to: ~p~nmsg:~p~n~n", [DodagId, From, To, DaoAckMsg]),
   saveDaoAckToFile(From, To, DodagId),
   gen_server:cast(To, {daoAckMsg, From, DaoAckMsg}).
@@ -93,12 +95,17 @@ sendDaoAckAfterDao(From, To, DodagId, State) ->
 
 handleDaoAck({From, DaoAckMsg}, {RootCount, Version, Mop}) ->
   addToDodagList(DaoAckMsg#daoAckMsg.dodagId),
-  put({?PARENT, DaoAckMsg#daoAckMsg.dodagId}, From), % Update Parent
-  {NewVersion, Rank} = get({?VERSION_RANK, DaoAckMsg#daoAckMsg.dodagId}),
-  {MyNode, Neighbors} = utils:findMeAndNeighbors(self()),
-  % io:format("DODAG_ID: ~p , node number: ~p Continue To Build,~n From : ~p~n~n", [DaoAckMsg#daoAckMsg.dodagId, RootCount, MyNode]),
-  rpl_msg:sendDioToNeighbors(self(), DaoAckMsg#daoAckMsg.dodagId, Rank, NewVersion, Mop, Neighbors),
-  utils:deleteMessageFromEts(DaoAckMsg#daoAckMsg.dodagId, From, self(), {finishedBuilding}).
+  case DaoAckMsg#daoAckMsg.updateType of
+    ?Update ->
+      put({?PARENT, DaoAckMsg#daoAckMsg.dodagId}, [From]), % Update Parent
+      {NewVersion, Rank} = get({?VERSION_RANK, DaoAckMsg#daoAckMsg.dodagId}),
+      {_, Neighbors} = utils:findMeAndNeighbors(self()),
+      rpl_msg:sendDioToNeighbors(self(), DaoAckMsg#daoAckMsg.dodagId, Rank, NewVersion, Mop, Neighbors);
+    ?Update_Addition ->
+      updateParent(DaoAckMsg#daoAckMsg.dodagId, From)
+  end,
+  io:format("Me: ~p , My PARENT LIST: ~p~n", [self(), getParents(DaoAckMsg#daoAckMsg.dodagId)]),
+  utils:deleteMessageFromEts(DaoAckMsg#daoAckMsg.dodagId, From, self(), {finishedBuilding}, daoAck).
 
 
 %************   Save info TO Files    ************%
@@ -130,7 +137,16 @@ addToDodagList(DodagId) ->
                  end
   end.
 
+getParents(DodagId) ->
+  case get({?PARENT, DodagId}) of
+    undefined -> [];
+    ParentList -> ParentList
+  end.
 
-
-
-
+updateParent(DodagId, NewParent) ->
+  case lists:member(NewParent, getParents(DodagId)) of
+    false ->
+      io:format("NEW Parent DODAG_ID: ~p, Me: ~p , New PARENT: ~p~n", [DodagId, self(), NewParent]),
+      put({?PARENT, DodagId}, getParents(DodagId) ++ [NewParent]);% Update Parent
+    true -> continue
+  end.

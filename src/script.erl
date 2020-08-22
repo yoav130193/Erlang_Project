@@ -14,6 +14,9 @@
 -import(gfx_server, [start/1]).
 -define(SERVER, rplServer).
 
+-define(STORING, 0).
+-define(NON_STORING, 1).
+
 script1() ->
   {_, ServerPid} = startAll(),
   io:format("My Server Pid: ~p~n", [ServerPid]),
@@ -24,7 +27,7 @@ script1() ->
 startAll() ->
   io:format("compile all files and start server~n"),
   compileAll(),
-  rplServer:start_link(0).
+  rplServer:start_link(?NON_STORING).
 %gen_server:start_link({local, ?SERVER}, ?SERVER, [1], []).
 
 startAllReal() ->

@@ -43,7 +43,7 @@
 -define(NON_STORING, 1).
 -define(RPL_REF, rplRef).
 
--record(rplServerData, {nodeCount, rootCount, randomLocationList, msg_id, messageList}).
+-record(rplServerData, {nodeCount, rootCount, randomLocationList, msg_id, messageList, mop}).
 -record(messageFormat, {msgId, from, to, msg}).
 
 
@@ -58,20 +58,20 @@ init(Mop) ->
   {ok, S} = file:open(?LOG_FILE_NAME, [write]),
   io:format(S, "~s~n", ["{DODAG_ID,Message Type,From,To}"]),
   process_flag(trap_exit, true),
-  io:format("rplServer init info: ~p~n", [erlang:make_ref()]),
+  io:format("rplServer init Mop: ~p~n", [Mop]),
   ets:new(?NODE_LIST, [set, named_table, public]),
   ets:new(?ROOT_LIST, [set, named_table, public]),
   ets:new(?MSG_TABLE, [set, named_table, public]),
-  ets:new(?MOP, [set, named_table, public]),
   ets:new(?RPL_REF, [set, named_table, public]),
   ets:new(?DOWNWARD_DIGRAPH, [set, named_table, public]),
 
-  ets:insert(?MOP, {mopKey, Mop}),
+  % ets:new(?MOP, [set, named_table, public]),
+  % ets:insert(?MOP, {mopKey, Mop}),
   NodeCount = 1,
   RootCount = 1,
   random:seed(1),
-  RandomLocationList = [random:uniform(200) || _ <- lists:seq(1, 5000)],
-  Data = #rplServerData{nodeCount = NodeCount, rootCount = RootCount, randomLocationList = RandomLocationList, msg_id = 0, messageList = []},
+  RandomLocationList = [random:uniform(200) || _ <- lists:seq(1, 500)],
+  Data = #rplServerData{nodeCount = NodeCount, rootCount = RootCount, randomLocationList = RandomLocationList, msg_id = 0, messageList = [], mop = Mop},
   {ok, Data}.
 
 
@@ -84,11 +84,11 @@ init(Mop) ->
 %TODO - handle REF
 handle_call({addNode, normal}, _From, Data) ->
   io:format("myserver wants to add a normal node~n"),
-  {_, Pid} = nodeServer:start_link(Data#rplServerData.nodeCount),
+  {_, Pid} = nodeServer:start_link({Data#rplServerData.nodeCount, Data#rplServerData.mop}),
   Ref = 0,
   ets:insert(?NODE_LIST, {Pid, {Ref, hd(Data#rplServerData.randomLocationList), hd(tl(Data#rplServerData.randomLocationList))}}),
   NewData = updateData(Data#rplServerData.nodeCount + 1, Data#rplServerData.rootCount,
-    tl(tl(Data#rplServerData.randomLocationList)), Data#rplServerData.msg_id, Data#rplServerData.messageList),
+    tl(tl(Data#rplServerData.randomLocationList)), Data#rplServerData.msg_id, Data#rplServerData.messageList, Data#rplServerData.mop),
   {reply, {Pid, Ref}, NewData};
 
 % CALL from the GUI - to add a root node
@@ -96,12 +96,12 @@ handle_call({addNode, normal}, _From, Data) ->
 %TODO - handle REF
 handle_call({addNode, root}, _From, Data) ->
   io:format("myserver wants to add a root node~n"),
-  {_, Pid} = rootServer:start_link(Data#rplServerData.rootCount),
+  {_, Pid} = rootServer:start_link({Data#rplServerData.rootCount, Data#rplServerData.mop}),
   Ref = 0,
   ets:insert(?NODE_LIST, {Pid, {Ref, hd(Data#rplServerData.randomLocationList), hd(tl(Data#rplServerData.randomLocationList))}}),
   ets:insert(?ROOT_LIST, {Pid, {Ref, hd(Data#rplServerData.randomLocationList), hd(tl(Data#rplServerData.randomLocationList))}}),
   NewData = updateData(Data#rplServerData.nodeCount + 1, Data#rplServerData.rootCount + 1,
-    tl(tl(Data#rplServerData.randomLocationList)), Data#rplServerData.msg_id, Data#rplServerData.messageList),
+    tl(tl(Data#rplServerData.randomLocationList)), Data#rplServerData.msg_id, Data#rplServerData.messageList, Data#rplServerData.mop),
   {reply, {Pid, Ref}, NewData}.
 
 %*** BUILD NETWORK ***%
@@ -135,9 +135,9 @@ handle_cast({downwardDigraphBuild}, Data) ->
 % Now You can send the messages safetly
 handle_cast({finishedDigraphBuilding}, Data) ->
   io:format("Can Send Message~n"),
-  sendAllMessages(Data#rplServerData.messageList),
+  sendAllMessages(Data#rplServerData.messageList, Data#rplServerData.mop),
   NewData = updateData(Data#rplServerData.nodeCount, Data#rplServerData.rootCount,
-    Data#rplServerData.randomLocationList, Data#rplServerData.msg_id, []),
+    Data#rplServerData.randomLocationList, Data#rplServerData.msg_id, [], Data#rplServerData.mop),
   {noreply, NewData};
 
 %*** SENDING MESSAGES ***%
@@ -145,7 +145,7 @@ handle_cast({finishedDigraphBuilding}, Data) ->
 % UNICAST from the GUI - request to send message from node A -> B
 % Without building the network
 handle_cast({sendMessage, From, To, Msg}, Data) ->
-  case ets:lookup(?MOP, mopKey) of
+  case Data#rplServerData.mop of
     ?STORING ->
       io:format("STORING 151~n"),
       gen_server:cast(From, {sendMessageStoring, From, To, Msg});
@@ -160,7 +160,7 @@ handle_cast({sendUnicastMessage, From, To, Msg}, Data) ->
   RootList = ets:tab2list(?ROOT_LIST),
   NewData = updateData(Data#rplServerData.nodeCount, Data#rplServerData.rootCount,
     Data#rplServerData.randomLocationList, Data#rplServerData.msg_id + 1, Data#rplServerData.messageList ++
-    [#messageFormat{msgId = Data#rplServerData.msg_id + 1, from = From, to = To, msg = Msg}]),
+    [#messageFormat{msgId = Data#rplServerData.msg_id + 1, from = From, to = To, msg = Msg}], Data#rplServerData.mop),
   buildNetwork(RootList),
   {noreply, NewData};
 
@@ -185,8 +185,6 @@ handle_cast({getAllPath}, Data) ->
 
 
 %***************    Examples    *************%
-
-
 handle_cast(_Request, State) ->
   {reply, State}.
 
@@ -226,29 +224,31 @@ returnPidList([], RootAcc) -> RootAcc;
 returnPidList(RootList, RootAcc) ->
   returnPidList(tl(RootList), [element(1, hd(RootList)) | RootAcc]).
 
-updateData(NodeCount, RootCount, RandomLocationList, Msg_ID, MessageList) ->
+updateData(NodeCount, RootCount, RandomLocationList, Msg_ID, MessageList, Mop) ->
   #rplServerData{nodeCount = NodeCount, rootCount = RootCount,
-    randomLocationList = RandomLocationList, msg_id = Msg_ID, messageList = MessageList}.
+    randomLocationList = RandomLocationList, msg_id = Msg_ID, messageList = MessageList, mop = Mop}.
 
 printData(Data) ->
   io:format("RootCount: ~p, NodeCount:~p, RandomList: ~p,Msg_id: ~p,MessageList= ~p~n", [Data#rplServerData.rootCount, Data#rplServerData.nodeCount,
     Data#rplServerData.randomLocationList, Data#rplServerData.msg_id, Data#rplServerData.messageList]).
 
-sendAllMessages([]) -> [];
-sendAllMessages(MessageList) ->
+sendAllMessages([], _Mop) -> [];
+sendAllMessages(MessageList, Mop) ->
   Message = hd(MessageList),
-  case hd(element(2, hd(ets:lookup(mop, mopKey)))) of
+  case hd(Mop) of
     ?STORING ->
-      Path = gen_server:call(Message#messageFormat.from, {sendMessageStoring, Message#messageFormat.from, Message#messageFormat.to, Message#messageFormat.msg}, 100000);
+      Path = gen_server:call(Message#messageFormat.from, {sendMessageStoring, Message#messageFormat.from, Message#messageFormat.to, Message#messageFormat.msg}, 100000),
+      io:format("RPL Server:,Storing Message, From: ~p, To: ~p , Path: ~p~n~n ", [Message#messageFormat.from, Message#messageFormat.to, Path]);
+
     ?NON_STORING ->
-      Path = gen_server:call(Message#messageFormat.from, {sendMessageNonStoring, Message#messageFormat.from, Message#messageFormat.to, Message#messageFormat.msg}, 100000)
+      Path = gen_server:call(Message#messageFormat.from, {sendMessageNonStoring, Message#messageFormat.from, Message#messageFormat.to, Message#messageFormat.msg}, 100000),
+      io:format("RPL Server:,NON_STORING Message, From: ~p, To: ~p , Path: ~p~n~n ", [Message#messageFormat.from, Message#messageFormat.to, Path])
   end,
-  io:format("RPL Server:, Message, From: ~p, To: ~p , Path: ~p~n~n ", [Message#messageFormat.from, Message#messageFormat.to, Path]),
-  sendAllMessages(tl(MessageList)).
+  sendAllMessages(tl(MessageList), Mop).
 
 addMessagesToData([], NewData) -> NewData;
 addMessagesToData(MessageList, NewData) ->
   Message = hd(MessageList),
   addMessagesToData(tl(MessageList), updateData(NewData#rplServerData.nodeCount, NewData#rplServerData.rootCount,
     NewData#rplServerData.randomLocationList, NewData#rplServerData.msg_id + 1, NewData#rplServerData.messageList ++
-    [#messageFormat{msgId = NewData#rplServerData.msg_id + 1, from = Message#messageFormat.from, to = Message#messageFormat.to, msg = Message#messageFormat.msg}])).
+    [#messageFormat{msgId = NewData#rplServerData.msg_id + 1, from = Message#messageFormat.from, to = Message#messageFormat.to, msg = Message#messageFormat.msg}], NewData#rplServerData.mop)).
