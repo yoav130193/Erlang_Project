@@ -9,43 +9,17 @@
 -module(rplServer).
 -author("yoavlevy").
 -behavior(gen_server).
+-include("include/header.hrl").
+
 %% API
 -export([start_link/1,
   code_change/3,
   handle_call/3,
   handle_cast/2,
   handle_info/2,
-  init/1,
+  init/1, deleteNode/0,
   terminate/2,
   printData/1]).
-
-%******** DATA STRUCTURES ********%
-% {nodePid,ref, X , Y}
--type nodeList() :: [{nodePid, ref, float, float}].
-% {rootPid,ref, X, Y}
--type rootList() :: [{rootPid, ref, float, float}].
-
--define(LOG_FILE_NAME, "my_log_file.txt").
--define(DOWNWARD_DIGRAPH_FILE, "downward_digraph_file.txt").
--define(VERSION_RANK, version_rank).
-
--define(RPL_SERVER, rplServer).
--define(NODE_SERVER, nodeServer).
--define(ROOT_SERVER, rootServer).
--define(MSG_TABLE, msgTable).
--define(DOWNWARD_DIGRAPH, downwardDigraph).
-
-
--define(NODE_LIST, nodeList).
--define(ROOT_LIST, rootList).
--define(MOP, mop).
--define(STORING, 0).
--define(NON_STORING, 1).
--define(RPL_REF, rplRef).
-
--record(rplServerData, {nodeCount, rootCount, randomLocationList, msg_id, messageList, mop}).
--record(messageFormat, {msgId, from, to, msg}).
-
 
 start_link(Mop) -> gen_server:start_link({local, ?RPL_SERVER}, ?RPL_SERVER, [Mop], []).
 
@@ -54,7 +28,7 @@ start_link(Mop) -> gen_server:start_link({local, ?RPL_SERVER}, ?RPL_SERVER, [Mop
 
 % Initialize all information to start the program
 init(Mop) ->
-  % FOR DEBUG ONLY
+% FOR DEBUG ONLY
   {ok, S} = file:open(?LOG_FILE_NAME, [write]),
   io:format(S, "~s~n", ["{DODAG_ID,Message Type,From,To}"]),
   process_flag(trap_exit, true),
@@ -65,8 +39,8 @@ init(Mop) ->
   ets:new(?RPL_REF, [set, named_table, public]),
   ets:new(?DOWNWARD_DIGRAPH, [set, named_table, public]),
 
-  % ets:new(?MOP, [set, named_table, public]),
-  % ets:insert(?MOP, {mopKey, Mop}),
+% ets:new(?MOP, [set, named_table, public]),
+% ets:insert(?MOP, {mopKey, Mop}),
   NodeCount = 1,
   RootCount = 1,
   random:seed(1),
@@ -83,21 +57,21 @@ init(Mop) ->
 % Return to the GUI the Pid of the new node
 %TODO - handle REF
 handle_call({addNode, normal}, _From, Data) ->
-  io:format("myserver wants to add a normal node~n"),
-  {_, Pid} = nodeServer:start_link({Data#rplServerData.nodeCount, Data#rplServerData.mop}),
-  Ref = 0,
+  %{_, Pid} = nodeServer:start_link({Data#rplServerData.nodeCount, Data#rplServerData.mop}),
+  {_, {Pid, Ref}} = nodeServer:start_link({Data#rplServerData.nodeCount, Data#rplServerData.mop}),
+  io:format("rplserver wants to add a normal node: ~p~n", [Pid]),
   ets:insert(?NODE_LIST, {Pid, {Ref, hd(Data#rplServerData.randomLocationList), hd(tl(Data#rplServerData.randomLocationList))}}),
   NewData = updateData(Data#rplServerData.nodeCount + 1, Data#rplServerData.rootCount,
     tl(tl(Data#rplServerData.randomLocationList)), Data#rplServerData.msg_id, Data#rplServerData.messageList, Data#rplServerData.mop),
+
   {reply, {Pid, Ref}, NewData};
 
 % CALL from the GUI - to add a root node
 % Return to the GUI the Pid of the new node
 %TODO - handle REF
 handle_call({addNode, root}, _From, Data) ->
-  io:format("myserver wants to add a root node~n"),
-  {_, Pid} = rootServer:start_link({Data#rplServerData.rootCount, Data#rplServerData.mop}),
-  Ref = 0,
+  io:format("rplserver wants to add a root node~n"),
+  {_, {Pid, Ref}} = rootServer:start_link({Data#rplServerData.rootCount, Data#rplServerData.mop}),
   ets:insert(?NODE_LIST, {Pid, {Ref, hd(Data#rplServerData.randomLocationList), hd(tl(Data#rplServerData.randomLocationList))}}),
   ets:insert(?ROOT_LIST, {Pid, {Ref, hd(Data#rplServerData.randomLocationList), hd(tl(Data#rplServerData.randomLocationList))}}),
   NewData = updateData(Data#rplServerData.nodeCount + 1, Data#rplServerData.rootCount + 1,
@@ -118,8 +92,11 @@ handle_cast({buildNetwork}, Data) ->
 % Now Build the downward Digraph
 % When finished, need to send the message
 handle_cast({finishedBuilding}, Data) ->
+  %  deleteNode(),
   RootList = ets:tab2list(?ROOT_LIST),
   downwardDigraphBuild(RootList),
+
+
   {noreply, Data};
 
 
@@ -183,17 +160,15 @@ handle_cast({getAllPath}, Data) ->
   getAllPath(RootList),
   {noreply, Data};
 
+% Just for debug
+handle_cast({deleteNode}, Data) ->
+  deleteNode(),
+  {noreply, Data};
+
 
 %***************    Examples    *************%
 handle_cast(_Request, State) ->
   {reply, State}.
-
-handle_info(_Info, State) ->
-  {noreply, State}.
-
-terminate(_Reason, _State) ->
-  io:format("myserver terminate~n"),
-  [].
 
 
 %TODO - change it if necessary
@@ -252,3 +227,21 @@ addMessagesToData(MessageList, NewData) ->
   addMessagesToData(tl(MessageList), updateData(NewData#rplServerData.nodeCount, NewData#rplServerData.rootCount,
     NewData#rplServerData.randomLocationList, NewData#rplServerData.msg_id + 1, NewData#rplServerData.messageList ++
     [#messageFormat{msgId = NewData#rplServerData.msg_id + 1, from = Message#messageFormat.from, to = Message#messageFormat.to, msg = Message#messageFormat.msg}], NewData#rplServerData.mop)).
+
+
+%*********** FOR DEBUGGING ************#
+deleteNode() ->
+  NodeList = ets:tab2list(nodeList),
+  exit(element(1, hd(NodeList)), rplExit).
+
+
+handle_info({'DOWN', Ref, process, Pid, Reason}, State) ->
+  io:format("rplServer Monitor crash, Ref: ~p , Pid: ~p, Reason: ~p~n", [Ref, Pid, Reason]),
+  {noreply, State};
+
+handle_info(_Info, State) ->
+  {noreply, State}.
+
+terminate(Reason, State) ->
+  io:format("rplServer terminate, Reason: ~p~n", [Reason]),
+  [].

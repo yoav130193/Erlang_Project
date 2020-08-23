@@ -8,32 +8,14 @@
 %%%-------------------------------------------------------------------
 -module(utils).
 -author("yoavlevy").
+-include("include/header.hrl").
+
 
 %% API
 -export([findMeAndNeighbors/1, handleDownwardMessage/6, findNeighbors/2,
   checkIfUpdateNeeded/4, requestParent/3, buildVertexDigraph/1, sendMessageNonStoring/4,
   sendMessageStoring/4, deleteMessageFromEts/5, getDodagList/0, calculatePath/3, startSendMessageDownward/6]).
 
--define(dis, 100).
--define(VERSION_RANK, version_rank).
--define(LOG_FILE_NAME, "my_log_file.txt").
--define(MY_DODAGs, my_Dodags).
--define(PARENT, parent).
--define(DOWNWARD_DIGRAPH, downwardDigraph).
--define(DOWNWARD_DIGRAPH_FILE, "downward_digraph_file.txt").
--define(ROOT_SERVER, rootServer).
--define(MSG_TABLE, msgTable).
--define(RPL_SERVER, rplServer).
--define(RPL_REF, rplRef).
--define(STORING, 0).
--define(NON_STORING, 1).
-
--define(Update, 0).
--define(Update_NO, 1).
--define(Update_Addition, 2).
-
-
--record(msg_table_key, {dodagId, from, to}).
 
 %**************   FIND FRIENDS   **************%
 

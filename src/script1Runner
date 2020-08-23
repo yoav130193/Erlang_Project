@@ -12,16 +12,11 @@ gen_server:cast(rplServer,{downwardDigraphBuild}).
 
 %***********    UNICAST MESSAGES     **********%
 %WITH PATH
-gen_server:cast(rplServer,{sendUnicastMessage, <0.123.0>,<0.125.0>,"HEY"}).
-gen_server:cast(rplServer,{sendUnicastMessage, <0.125.0>,<0.123.0>,"HEY"}).
-gen_server:cast(rplServer,{sendUnicastMessage, <0.125.0>,<0.126.0>,"HEY"}).
-gen_server:cast(rplServer,{sendUnicastMessage, <0.126.0>,<0.125.0>,"HEY"}).
-gen_server:cast(rplServer,{sendUnicastMessage, <0.124.0>,<0.126.0>,"HEY"}).
-
-
-
-
-
+gen_server:cast(rplServer,{sendUnicastMessage, <0.129.0>,<0.131.0>,"HEY"}).
+gen_server:cast(rplServer,{sendUnicastMessage, <0.131.0>,<0.129.0>,"HEY"}).
+gen_server:cast(rplServer,{sendUnicastMessage, <0.131.0>,<0.132.0>,"HEY"}).
+gen_server:cast(rplServer,{sendUnicastMessage, <0.132.0>,<0.131.0>,"HEY"}).
+gen_server:cast(rplServer,{sendUnicastMessage, <0.130.0>,<0.132.0>,"HEY"}).
 
 % To Root
 gen_server:cast(rplServer,{sendUnicastMessage, <0.126.0>,<0.122.0>,"HEY"}).
@@ -44,6 +39,7 @@ gen_server:cast(rplServer,{sendMulticastMessage,[{messageFormat,0,<0.123.0>,<0.1
 % Check Existence of Path
 gen_server:cast(rplServer,{getAllPath}).
 
+gen_server:cast(rplServer,{deleteNode}).
 
 
 % FOR REAL

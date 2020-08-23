@@ -8,28 +8,12 @@
 %%%-------------------------------------------------------------------
 -module(rpl_msg).
 -author("yoavlevy").
+-include("include/header.hrl").
+
 
 %% API
 -export([sendDioToNeighbors/6, sendDaoAfterDio/5, sendDaoAckAfterDao/5, handleDaoAck/2, handleDioMsg/3, getParents/1]).
 
--define(LOG_FILE_NAME, "my_log_file.txt").
--define(VERSION_RANK, version_rank).
--define(PARENT, parent).
--define(MY_DODAGs, my_Dodags).
--define(DOWNWARD_DIGRAPH, downwardDigraph).
--define(MSG_TABLE, msgTable).
--define(STORING, 0).
--define(NON_STORING, 1).
-
--define(Update, 0).
--define(Update_NO, 1).
--define(Update_Addition, 2).
-
--record(msg_table_key, {dodagId, from, to}).
-
-% ***********   DIO MSG   ***********%
-
--record(dioMsg, {rplInstanceId, versionNumber, rank, g = 2#1, zero = 2#0, mop, prf = 2#000, dtsn, flags = 16#00, reserved = 16#00, dodagId}).
 
 % DIO (DODAF Indormation Object)
 % This is a multicast message from the root that notifies all the nodes about his DODAG
@@ -64,8 +48,6 @@ handleDioMsg(DioMsg, From, State) ->
 
 % ***********   DAO MSG   ***********%
 
--record(daoMsg, {rplInstanceId, k = 2#1, d = 2#1, flags = 8#00, reserved = 16#00, daoSequence, dodagId, updateType}).
-
 %DAO Destination Advertisment Object)
 % unicast message from all the node to the root, this message is a request to join the DODAG
 daoMsg(DodagId, UpdateType) ->
@@ -78,8 +60,6 @@ sendDaoAfterDio(From, To, DodagId, UpdateType, State) ->
 
 
 % ***********   DAO ACK MSG   ***********%
-
--record(daoAckMsg, {rplInstanceId, d = 2#1, reserved = 2#0000000, daoSequence, status = 16#01, dodagId, updateType}).
 
 % DAO acknowledge
 % After receiving a DAO message, the root sends an ack message that confirms that the node accepted in to the DODAG

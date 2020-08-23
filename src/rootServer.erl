@@ -9,39 +9,21 @@
 -module(rootServer).
 -author("yoavlevy").
 -behavior(gen_server).
+-include("include/header.hrl").
+
 %% API
 -export([init/1, handle_call/3, handle_cast/2, terminate/2, start_link/1]).
 
--record(dioMsg, {rplInstanceId, versionNumber, rank, g = 2#1, zero = 2#0, mop, prf = 2#000, dtsn, flags = 16#00, reserved = 16#00, dodagId}).
--record(daoMsg, {rplInstanceId, k = 2#1, d = 2#1, flags = 8#00, reserved = 16#00, daoSequence, dodagId, updateType}).
--record(daoAckMsg, {rplInstanceId, d = 2#1, reserved = 2#0000000, daoSequence, status = 16#01, dodagId, updateType}).
-
-
--define(MY_DODAGs, my_Dodags).
--define(VERSION_RANK, version_rank).
--define(PARENT, parent).
--define(DOWNWARD_DIGRAPH, downwardDigraph).
--define(DOWNWARD_DIGRAPH_FILE, "downward_digraph_file.txt").
--define(ROOT_SERVER, rootServer).
--define(MSG_TABLE, msgTable).
--define(RPL_SERVER, rplServer).
--define(RPL_REF, rplRef).
--define(STORING, 0).
--define(NON_STORING, 1).
-
-
-
--record(msg_table_key, {dodagId, from, to}).
 
 start_link({RootCount, Mop}) ->
-  gen_server:start_link({local, list_to_atom("root_server" ++ integer_to_list(RootCount))}, ?ROOT_SERVER, [{RootCount, Mop}], []).
+  gen_server:start_monitor({local, list_to_atom("root_server" ++ integer_to_list(RootCount))}, ?ROOT_SERVER, [{RootCount, Mop}], []).
+%gen_server:start_link({local, list_to_atom("root_server" ++ integer_to_list(RootCount))}, ?ROOT_SERVER, [{RootCount, Mop}], []).
 
 init([{RootCount, Mop}]) ->
   io:format("new root number: ~p Mop: ~p~n ", [RootCount, Mop]),
   put(?MY_DODAGs, [self()]),
-  % ets:new(hi, [set, public]),
   Version = 0,
-  % Mop = element(2, hd(ets:lookup(mop, mopKey))),
+  process_flag(trap_exit, true),
   {ok, {RootCount, Version, Mop}}.
 
 %****************     RPL PROTOCOL MESSAGES     *****************%
@@ -88,7 +70,6 @@ handle_cast({daoAckMsg, From, DaoAckMsg}, {RootCount, Version, Mop}) ->
 handle_cast({downwardDigraphBuild}, {RootCount, Version, Mop}) ->
   NodeList = ets:tab2list(nodeList),
   io:format("root number: ~p Starts Building Downward Digraph~n~n", [RootCount]),
-% FROM,DODOAG, NodeList
   utils:requestParent(self(), self(), NodeList),
   {noreply, {RootCount, Version, Mop}};
 
@@ -179,10 +160,6 @@ handle_call({sendMessageNonStoring, From, To, Msg}, OrderFrom, {RootCount, Versi
 handle_call(Request, From, State) ->
   erlang:error(not_implemented).
 
-terminate(_Reason, _State) ->
-  io:format("rootServer terminate~n"),
-  [].
-
 
 %************     DEBUG FUNCTION    *************%
 
@@ -220,3 +197,13 @@ addParentsList(DownwardDigraph, From, ParentList, DodagID) ->
     digraph:add_edge(DownwardDigraph, From, Parent)
                 end, ParentList),
   DownwardDigraph.
+
+
+
+
+terminate(Reason, _State) ->
+  io:format("rootServer: ~p, terminate , Reasom:~p~n", [self(), Reason]),
+  ets:delete(?NODE_LIST, self()),
+  ets:delete(?ROOT_LIST, self()),
+  script:checkLists(),
+  exit({root, Reason}).

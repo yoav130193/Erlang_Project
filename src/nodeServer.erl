@@ -9,29 +9,20 @@
 -module(nodeServer).
 -author("yoavlevy").
 -behavior(gen_server).
+-include("include/header.hrl").
+
 %% API
 -export([init/1, handle_call/3, handle_cast/2, start_link/1, terminate/2]).
 
--record(dioMsg, {rplInstanceId, versionNumber, rank, g = 2#1, zero = 2#0, mop, prf = 2#000, dtsn, flags = 16#00, reserved = 16#00, dodagId}).
--record(daoMsg, {rplInstanceId, k = 2#1, d = 2#1, flags = 8#00, reserved = 16#00, daoSequence, dodagId, updateType}).
--record(daoAckMsg, {rplInstanceId, d = 2#1, reserved = 2#0000000, daoSequence, status = 16#01, dodagId, updateType}).
-
--define(MY_DODAGs, my_Dodags).
--define(VERSION_RANK, version_rank).
--define(PARENT, parent).
--define(NODE_SERVER, nodeServer).
--define(MSG_TABLE, msgTable).
--define(RPL_REF, rplRef).
-
-
--record(msg_table_key, {dodagId, from, to}).
 
 start_link({NodeCount, Mop}) ->
-  gen_server:start_link({local, list_to_atom("node_server" ++ integer_to_list(NodeCount))}, ?NODE_SERVER, [{NodeCount, Mop}], []).
+  gen_server:start_monitor({local, list_to_atom("node_server" ++ integer_to_list(NodeCount))}, ?NODE_SERVER, [{NodeCount, Mop}], []).
+% gen_server:start_link({local, list_to_atom("node_server" ++ integer_to_list(NodeCount))}, ?NODE_SERVER, [{NodeCount, Mop}], []).
 
 init([{NodeCount, Mop}]) ->
-  io:format("new node :)~n"),
-  % Mop = element(2, hd(ets:lookup(mop, mopKey))),
+  Remainder = NodeCount rem 6,
+  io:format("new node: ~p remainder: ~p :)~n", [self(), Remainder]),
+  process_flag(trap_exit, true),
   {ok, {NodeCount, Mop}}.
 
 %****************     RPL PROTOCOL MESSAGES     *****************%
@@ -77,10 +68,6 @@ handle_cast({downwardMessage, From, To, Msg, DodagID, PathList, WholePath}, Stat
   {noreply, State}.
 
 
-terminate(_Reason, _State) ->
-  io:format("nodeServer terminate~n"),
-  [].
-
 handle_call({sendMessageStoring, From, To, Msg}, OrderFrom, {NodeCount, Mop}) ->
   ets:insert(?RPL_REF, {ref, OrderFrom}),
   io:format("OrderFrom: ~p~n", [OrderFrom]),
@@ -96,3 +83,10 @@ handle_call({sendMessageNonStoring, From, To, Msg}, OrderFrom, {NodeCount, Mop})
 
 handle_call(Request, From, State) ->
   erlang:error(not_implemented).
+
+
+terminate(Reason, _State) ->
+  io:format("nodeServer: ~p, terminate , Reason: ~p~n", [self(), Reason]),
+  ets:delete(?NODE_LIST, self()),
+  script:checkLists(),
+  exit({node, Reason}).
