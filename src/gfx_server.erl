@@ -349,8 +349,8 @@ terminate(_Reason, _) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%  {k,v} -> {Pid,{Ref,NumOfRoots,_DontCare,Func,MovementType,NewDirection,{NewX,NewY}}
 insertToETS([{Pid,{_Ref,_NumOfRoots,_Type,_Func,_MovementType,_NewDirection,{X,Y}}}|[]]) -> ets:insert(?NODE_LIST,{Pid,{X,Y}});
-insertToETS([{Pid,{_Ref,_NumOfRoots,_Type,_Func,_MovementType,_NewDirection,{X,Y}}}|T]) ->
-  ets:insert(?NODE_LIST,{Pid,{X,Y}}),
+insertToETS([{Pid,{Ref,_NumOfRoots,_Type,_Func,_MovementType,_NewDirection,{X,Y}}}|T]) ->
+  ets:insert(?NODE_LIST,{Pid,{Ref,{X,Y}}}),
   insertToETS(T).
 
 makeMulticast(_MsgId,[],_Src,_Msg) -> [];
@@ -569,7 +569,7 @@ quit(_State) -> io:format("quit ~n").
 drawSim(_State) -> 1.
 
 
-create(RootOrNode, State = #state{locationMap = LocationMap,numOfRoots = NumOfRoots})  ->
+create(RootOrNode, State = #state{locationMap = LocationMap,numOfRoots = NumOfRoots,numOfNodes = NumOfNodes})  ->
   {Func,Type} = case State#state.moveType of
                   "Random" -> {random,random};
                   "Polynomial" -> {funcGenerator:generatePolynom(rand:uniform(3),[]),polynomial};
@@ -582,15 +582,17 @@ create(RootOrNode, State = #state{locationMap = LocationMap,numOfRoots = NumOfRo
                       polynomial -> getStartingPos(Func,Type,X,RootOrNode, State);
                       sinusoidal -> getStartingPos(Func,Type,X,RootOrNode, State)
                     end,
-%  {Pid,Ref} = gen_server:cast(rplServer, {addNode, root}),
-  Pid = rand:uniform(100),
-  Ref = rand:uniform(100),
+  {Pid,Ref} = gen_server:cast(rplServer, {addNode, root}),
+  %Pid = rand:uniform(100),
+  %Ref = rand:uniform(100),
   NewLocMap = maps:put(Pid,{Ref,NumOfRoots,root,Func,Type,?incerement, {FinalX,FinalY}},LocationMap),
   % NewLocMap = maps:put(Pid,{Ref,NumOfRoots,root,Func,Type,?incerement,{0,0}},LocationMap),
   %drawNodes(maps:to_list(NewLocMap),State#state.panel),
   %drawNode(erlang:element(7,maps:get(Pid,NewLocMap)),State#state.panel),
-  %% TODO: fix here the number that will incerement
-  NewState = State#state{locationMap = NewLocMap,numOfRoots = NumOfRoots + 1},
+  NewState = case RootOrNode of
+               root -> State#state{locationMap = NewLocMap,numOfRoots = NumOfRoots + 1};
+               node -> State#state{locationMap = NewLocMap,numOfNodes = NumOfNodes + 1}
+             end,
   if
     RootOrNode == root -> {root_OK,NewState};
     true -> {node_OK,NewState}
