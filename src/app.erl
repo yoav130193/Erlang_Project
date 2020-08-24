@@ -14,9 +14,11 @@
 -export([start/2, stop/1]).
 
 
-start(StartType, StartArgs) ->
-
-  erlang:error(not_implemented).
+start(_StartType,_StartArgs) ->
+  script:compileAll(),
+  gfx_server:start(1),
+  rplServer:start_link(?STORING),
+  spawn(interruptor,loop,[150]).
 
 stop(State) ->
   erlang:error(not_implemented).

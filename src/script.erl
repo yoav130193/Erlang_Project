@@ -40,7 +40,9 @@ compileAll() ->
   compile:file(rpl_msg),
   compile:file(gfx_server),
   compile:file(funcGenerator),
+  compile:file(interruptor),
   compile:file(utils).
+
 
 addNode(Server_Pid, root) ->
   gen_server:call(Server_Pid, {addNode, root});
