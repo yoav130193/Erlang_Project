@@ -63,6 +63,7 @@ init([Mode,Node]) ->
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%handle_sync_event(#wx{event=#wxPaint{}}, _, State ) -> {ok}.
 
 %% event by choosing Storing Mode
 handle_event(#wx{obj  = StoringCheckBox, event = #wxCommand{type = command_checkbox_clicked}},
@@ -385,39 +386,6 @@ queueKeyToPid(Key,2) -> Key.
 integer_to_string(Integer) when is_integer(Integer) ->
   lists:flatten(io_lib:format("~p", [Integer])).
 
-drawMap("",_,{_,_}) -> ok;
-
-drawMap("Middle",DC,{W,H}) ->
-  wxDC:drawRectangle(DC, {100, 100, 300,50}),
-  drawFrame(DC,{W,H});
-
-drawMap("Borders",DC,{W,H}) ->
-  drawFrame(DC,{W,H});
-
-drawMap("Gap",DC,{W,H}) ->
-  wxDC:drawRectangle(DC, {round(W*2 div 3), round(H div 2),W-10-round(W*2 div 3), 10}),
-  wxDC:drawRectangle(DC, {10, round(H div 2),round(H div 3), 10}),
-  drawFrame(DC,{W,H}).
-
-
-
-drawFrame(DC,{W,H}) ->
-  wxDC:drawRectangle(DC, {0, 0, 10,H}),
-  wxDC:drawRectangle(DC, {0, 0, W,10}),
-  wxDC:drawRectangle(DC, {0, H-10, W,10}),
-  wxDC:drawRectangle(DC, {W-10, 0,10,H}).
-
-drawDrone(master,Dr,DC,_,MasBit) ->
-  wxDC:drawBitmap(DC,MasBit,Dr);
-drawDrone(member,Dr,DC,MemBit,_) ->
-  wxDC:drawBitmap(DC,MemBit,Dr).
-
-
-
-drawTarget(_,_) -> ok.
-
-
-
 init_layout(Mode,Node) ->
   Wx = wx:new(),
   Frame = wxFrame:new(Wx,-1,"RPL Simulation",[{size,{?MapSize + 500,?MapSize + 500}}]),
@@ -548,7 +516,7 @@ init_layout(Mode,Node) ->
   wxButton:disable(SendMsgBtn),
   %% show frame %%
   wxPanel:connect(Panel, left_down),
-  wxPanel:connect(Panel, paint, [callback]),
+  %wxPanel:connect(Panel, paint, [callback]),
   wxFrame:show(Frame),
   %io:format("~p~n",[wxPanel:getSize(Panel)]),
   #state
@@ -586,16 +554,21 @@ create(RootOrNode, State = #state{locationMap = LocationMap,numOfRoots = NumOfRo
                       polynomial -> getStartingPos(Func,Type,X,RootOrNode, State);
                       sinusoidal -> getStartingPos(Func,Type,X,RootOrNode, State)
                     end,
-  {Pid,Ref} = gen_server:cast(rplServer, {addNode, root}),
   %Pid = rand:uniform(100),
   %Ref = rand:uniform(100),
-  NewLocMap = maps:put(Pid,{Ref,NumOfRoots,root,Func,Type,?incerement, {FinalX,FinalY}},LocationMap),
   % NewLocMap = maps:put(Pid,{Ref,NumOfRoots,root,Func,Type,?incerement,{0,0}},LocationMap),
   %drawNodes(maps:to_list(NewLocMap),State#state.panel),
   %drawNode(erlang:element(7,maps:get(Pid,NewLocMap)),State#state.panel),
   NewState = case RootOrNode of
-               root -> State#state{locationMap = NewLocMap,numOfRoots = NumOfRoots + 1};
-               node -> State#state{locationMap = NewLocMap,numOfNodes = NumOfNodes + 1}
+               root ->
+                 {Pid,Ref} = gen_server:call(rplServer, {addNode, root}),
+                 %gen_server:call(rplServer, {addNode, root}),
+                 NewLocMap = maps:put(Pid,{Ref,NumOfRoots,root,Func,Type,?incerement, {FinalX,FinalY}},LocationMap),
+                 State#state{locationMap = NewLocMap,numOfRoots = NumOfRoots + 1};
+               node ->
+                 {Pid,Ref} = gen_server:call(rplServer, {addNode, normal}),
+                 NewLocMap = maps:put(Pid,{Ref,NumOfRoots,node,Func,Type,?incerement, {FinalX,FinalY}},LocationMap),
+                 State#state{locationMap = NewLocMap,numOfNodes = NumOfNodes + 1}
              end,
   if
     RootOrNode == root -> {root_OK,NewState};
