@@ -43,7 +43,7 @@
   node_list_q_1,node_list_q_2,node_list_q_3,node_list_q_4,nq1,nq2,nq3,nq4,panel,size,frame,
   protocolServer,msgTextBox,mode,node,id,locationMap,msg,numOfNodes,numOfRoots,tableID,msgState,
   src,destinations,srcTextBox,destinationCombobox,startBtn,storing_checkbox,nonStoring_checkbox,
-  removeSrcBtn,removeDstBtn,msgID}).
+  removeSrcBtn,removeDstBtn,msgID,pathList}).
 
 
 
@@ -334,8 +334,9 @@ handle_cast(draw, State) ->
   %io:format("got draw ~n"),
   {noreply,NewState};
 
-handle_cast(pathList,State) ->
-  {noreply,State};
+handle_cast({pathList,PathList},State) ->
+  NewState = State#state{pathList = PathList},
+  {noreply,NewState};
 %%data Rx from drones
 handle_cast(_Msg, State) ->
   {noreply,State}.
@@ -558,7 +559,8 @@ init_layout(Mode,Node) ->
     appState = initiated, msgTextBox = Frame, mode = Mode, node = Node, msg = MessageTextBox,locationMap = #{},
     numOfNodes = 0, numOfRoots = 0, nq1 = List_NQ_1_Label,nq2 = List_NQ_2_Label,nq3 = List_NQ_3_Label,nq4 =  List_NQ_4_Label,
     msgState = notStarted,src = nullptr, destinations = #{},startBtn = StartBtn,removeDstBtn = RemoveDst,removeSrcBtn = RemoveSrc,
-    storing_checkbox = Storing_checkBox,nonStoring_checkbox = NStoring_checkBox,destinationCombobox = DestinationList, srcTextBox = SrcTxt, msgID = 0
+    storing_checkbox = Storing_checkBox,nonStoring_checkbox = NStoring_checkBox,destinationCombobox = DestinationList,
+    srcTextBox = SrcTxt, msgID = 0, pathList = []
   }.
 
 createRoot(_State) -> io:format("create root ~n").
