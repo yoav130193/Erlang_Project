@@ -462,7 +462,7 @@ init_layout(Mode,Node) ->
   %% create UI sizers %%
   wxWindow:setSizer(Frame, MainSizer),
   wxSizer:setSizeHints(MainSizer,Frame),
-  wxWindow:setMinSize(Frame,wxWindow:getSize(Frame)),
+  %wxWindow:setMinSize(Frame,wxWindow:getSize(Frame)),
   CreateSizer = wxBoxSizer:new(?wxVERTICAL),
   Q1Sizer = wxBoxSizer:new(?wxVERTICAL),
   Q2Sizer = wxBoxSizer:new(?wxVERTICAL),
