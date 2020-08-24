@@ -8,25 +8,26 @@
 %%%-------------------------------------------------------------------
 -module(funcGenerator).
 -author("amir").
+-define(sinFreq,100).
 %% API
--export([generatePolynom/2,solveP/3,solveS/3,generateSin/2]).
+-export([generatePolynom/2,solveP/3,solveS/2,generateSin/2]).
 
 generatePolynom(0,Polynom) -> lists:reverse([{(rand:uniform_real() - 0.5) ,0} | Polynom]);
-generatePolynom(Length, Polynom) -> generatePolynom(Length - 1, [{(rand:uniform_real() - 0.5) / math:pow(100,Length),Length} | Polynom]).
+generatePolynom(Length, Polynom) ->
+  X = erlang:floor(math:pow(8,Length)),
+  generatePolynom(Length - 1, [{(rand:uniform_real() - 0.5) / rand:uniform(X) ,Length} | Polynom]).
 
 solveP([],X,Acc) -> {X,Acc};
 solveP(Func,X,Acc) -> solveP(tl(Func),X,Acc + partialSolveP(hd(Func),X)).
 
 partialSolveP({Coeff,Power},X) -> Coeff*math:pow(X,Power).
 
-generateSin(0,Function) -> lists:reverse([{(rand:uniform(2000) - 1000) / 2000,0} | Function]);
-generateSin(NumOfElements,Function) -> generateSin(NumOfElements -1,[{(rand:uniform(2000) - 1000) , generatePolynom(NumOfElements,[])}|Function]).
+%generateSin(0,Function) -> lists:reverse([{(rand:uniform(2000) - 1000) / 2000,0} | Function]);
+generateSin(Coef,Function) ->{Coef,rand:uniform(950)}.
+% generateSin(NumOfElements,Function) -> generateSin(NumOfElements -1,[{(rand:uniform(1000) - 500) , generatePolynom(NumOfElements,[])}|Function]).
 
 
-solveS([{_ElemA,ElemB}|[]],X,Acc) -> {X,ElemB + Acc};
-solveS(Func,X,Acc) ->
-  {ElemA,ElemB} = hd(Func),
-  {_ElemC,ElemD} = solveP(ElemB,X,0),
-  solveS(tl(Func),X,Acc + ElemA*math:sin(ElemD)).
+%solveS([{_ElemA,ElemB}|[]],X,Acc) -> {X,ElemB + Acc};
+solveS({Coeff,N},X) -> {X,erlang:floor(Coeff*math:sin(X/(?sinFreq*math:pi())) + N)}.
 
 
