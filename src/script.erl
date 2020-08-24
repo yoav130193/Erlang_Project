@@ -11,7 +11,7 @@
 -include("include/header.hrl").
 
 %% API
--export([startAll/0, addNode/2, checkLists/0, script1/0, addMultipleNodes/3, randommmmm/0, compileAll/0, startAllReal/0]).
+-export([startAll/0, addNode/2, checkLists/0, script1/0, addMultipleNodes/3, randommmmm/0, compileAll/0, startAllReal/0,compileAll/0]).
 -import(gfx_server, [start/1]).
 
 script1() ->

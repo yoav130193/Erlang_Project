@@ -8,7 +8,7 @@
 %%%-------------------------------------------------------------------
 -module('app').
 -author("amir").
-
+-include("include/header.hrl").
 -behavior(application).
 %% API
 -export([start/2, stop/1]).
@@ -17,8 +17,8 @@
 start(_StartType,_StartArgs) ->
   script:compileAll(),
   gfx_server:start(1),
-  rplServer:start_link(?STORING),
-  spawn(interruptor,loop,[150]).
+  rplServer:start_link(?STORING).
+  %spawn(interruptor,loop,[150]).
 
 stop(State) ->
   erlang:error(not_implemented).
