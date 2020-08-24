@@ -16,15 +16,24 @@
 
 
 start_link({RootCount, Mop}) ->
-  gen_server:start_monitor({local, list_to_atom("root_server" ++ integer_to_list(RootCount))}, ?ROOT_SERVER, [{RootCount, Mop}], []).
-%gen_server:start_link({local, list_to_atom("root_server" ++ integer_to_list(RootCount))}, ?ROOT_SERVER, [{RootCount, Mop}], []).
+  gen_server:start_monitor({local, list_to_atom("root_server" ++ integer_to_list(RootCount))}, ?ROOT_SERVER, [{RootCount, Mop}], []);
+start_link({RootCount, OldVersion, Mop}) ->
+  gen_server:start_monitor({local, list_to_atom("root_server" ++ integer_to_list(RootCount))}, ?ROOT_SERVER, [{RootCount, Mop, OldVersion}], []).
 
+% INIT a new Root
 init([{RootCount, Mop}]) ->
   io:format("new root number: ~p Mop: ~p~n ", [RootCount, Mop]),
   put(?MY_DODAGs, [self()]),
   Version = 0,
   process_flag(trap_exit, true),
-  {ok, {RootCount, Version, Mop}}.
+  {ok, {RootCount, Version, Mop}};
+
+% INIT restore an existing Root
+init([{RootCount, Mop, OldVersion}]) ->
+  io:format("restore root number: ~p Mop: ~p~n ", [RootCount, Mop]),
+  put(?MY_DODAGs, [self()]),
+  process_flag(trap_exit, true),
+  {ok, {RootCount, OldVersion, Mop}}.
 
 %****************     RPL PROTOCOL MESSAGES     *****************%
 
@@ -201,9 +210,9 @@ addParentsList(DownwardDigraph, From, ParentList, DodagID) ->
 
 
 
-terminate(Reason, _State) ->
-  io:format("rootServer: ~p, terminate , Reasom:~p~n", [self(), Reason]),
+terminate(Reason, State) ->
+  io:format("rootServer: ~p, terminate , Reason:~p, State: ~p~n", [self(), Reason, State]),
   ets:delete(?NODE_LIST, self()),
   ets:delete(?ROOT_LIST, self()),
   script:checkLists(),
-  exit({root, Reason}).
+  exit({rootCrash, Reason, State}).

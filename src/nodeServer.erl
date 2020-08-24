@@ -17,11 +17,9 @@
 
 start_link({NodeCount, Mop}) ->
   gen_server:start_monitor({local, list_to_atom("node_server" ++ integer_to_list(NodeCount))}, ?NODE_SERVER, [{NodeCount, Mop}], []).
-% gen_server:start_link({local, list_to_atom("node_server" ++ integer_to_list(NodeCount))}, ?NODE_SERVER, [{NodeCount, Mop}], []).
 
 init([{NodeCount, Mop}]) ->
-  Remainder = NodeCount rem 6,
-  io:format("new node: ~p remainder: ~p :)~n", [self(), Remainder]),
+  io:format("new node: ~p :)~n", [self()]),
   process_flag(trap_exit, true),
   {ok, {NodeCount, Mop}}.
 
@@ -85,8 +83,8 @@ handle_call(Request, From, State) ->
   erlang:error(not_implemented).
 
 
-terminate(Reason, _State) ->
-  io:format("nodeServer: ~p, terminate , Reason: ~p~n", [self(), Reason]),
+terminate(Reason, State) ->
+  io:format("nodeServer: ~p, terminate , Reason: ~p, State: ~p~n", [self(), Reason, State]),
   ets:delete(?NODE_LIST, self()),
   script:checkLists(),
-  exit({node, Reason}).
+  exit({nodeCrash, Reason, State}).

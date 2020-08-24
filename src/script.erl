@@ -24,7 +24,7 @@ script1() ->
 startAll() ->
   io:format("compile all files and start server~n"),
   compileAll(),
-  rplServer:start_link(?NON_STORING).
+  rplServer:start_link(?STORING).
 %gen_server:start_link({local, ?SERVER}, ?SERVER, [1], []).
 
 startAllReal() ->

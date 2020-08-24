@@ -38,9 +38,6 @@ init(Mop) ->
   ets:new(?MSG_TABLE, [set, named_table, public]),
   ets:new(?RPL_REF, [set, named_table, public]),
   ets:new(?DOWNWARD_DIGRAPH, [set, named_table, public]),
-
-% ets:new(?MOP, [set, named_table, public]),
-% ets:insert(?MOP, {mopKey, Mop}),
   NodeCount = 1,
   RootCount = 1,
   random:seed(1),
@@ -55,20 +52,19 @@ init(Mop) ->
 
 % Call from the GUI - addition of a new node
 % Return to the GUI the Pid of the new node
-%TODO - handle REF
 handle_call({addNode, normal}, _From, Data) ->
   %{_, Pid} = nodeServer:start_link({Data#rplServerData.nodeCount, Data#rplServerData.mop}),
   {_, {Pid, Ref}} = nodeServer:start_link({Data#rplServerData.nodeCount, Data#rplServerData.mop}),
+%  Pid = 0, Ref = 0,
+%  {_, {Pid, Ref}} = rpc:call(?NODE_1, ?NODE_SERVER, start_link, [{Data#rplServerData.nodeCount, Data#rplServerData.mop}]),
   io:format("rplserver wants to add a normal node: ~p~n", [Pid]),
   ets:insert(?NODE_LIST, {Pid, {Ref, hd(Data#rplServerData.randomLocationList), hd(tl(Data#rplServerData.randomLocationList))}}),
   NewData = updateData(Data#rplServerData.nodeCount + 1, Data#rplServerData.rootCount,
     tl(tl(Data#rplServerData.randomLocationList)), Data#rplServerData.msg_id, Data#rplServerData.messageList, Data#rplServerData.mop),
-
   {reply, {Pid, Ref}, NewData};
 
 % CALL from the GUI - to add a root node
 % Return to the GUI the Pid of the new node
-%TODO - handle REF
 handle_call({addNode, root}, _From, Data) ->
   io:format("rplserver wants to add a root node~n"),
   {_, {Pid, Ref}} = rootServer:start_link({Data#rplServerData.rootCount, Data#rplServerData.mop}),
@@ -199,13 +195,11 @@ returnPidList([], RootAcc) -> RootAcc;
 returnPidList(RootList, RootAcc) ->
   returnPidList(tl(RootList), [element(1, hd(RootList)) | RootAcc]).
 
+% Updating the state data
 updateData(NodeCount, RootCount, RandomLocationList, Msg_ID, MessageList, Mop) ->
   #rplServerData{nodeCount = NodeCount, rootCount = RootCount,
     randomLocationList = RandomLocationList, msg_id = Msg_ID, messageList = MessageList, mop = Mop}.
 
-printData(Data) ->
-  io:format("RootCount: ~p, NodeCount:~p, RandomList: ~p,Msg_id: ~p,MessageList= ~p~n", [Data#rplServerData.rootCount, Data#rplServerData.nodeCount,
-    Data#rplServerData.randomLocationList, Data#rplServerData.msg_id, Data#rplServerData.messageList]).
 
 sendAllMessages([], _Mop) -> [];
 sendAllMessages(MessageList, Mop) ->
@@ -229,19 +223,35 @@ addMessagesToData(MessageList, NewData) ->
     [#messageFormat{msgId = NewData#rplServerData.msg_id + 1, from = Message#messageFormat.from, to = Message#messageFormat.to, msg = Message#messageFormat.msg}], NewData#rplServerData.mop)).
 
 
-%*********** FOR DEBUGGING ************#
+%***********   FOR DEBUGGING    ************#
 deleteNode() ->
   NodeList = ets:tab2list(nodeList),
   exit(element(1, hd(NodeList)), rplExit).
 
 
-handle_info({'DOWN', Ref, process, Pid, Reason}, State) ->
-  io:format("rplServer Monitor crash, Ref: ~p , Pid: ~p, Reason: ~p~n", [Ref, Pid, Reason]),
+printData(Data) ->
+  io:format("RootCount: ~p, NodeCount:~p, RandomList: ~p,Msg_id: ~p,MessageList= ~p~n", [Data#rplServerData.rootCount, Data#rplServerData.nodeCount,
+    Data#rplServerData.randomLocationList, Data#rplServerData.msg_id, Data#rplServerData.messageList]).
+
+
+%***********     Handle Errors    ************#
+
+% Handle falls from root or Node Server
+handle_info({'DOWN', Ref, process, Pid, {Info, Reason, ProcState}}, State) ->
+  io:format("rplServer Monitor crash, Ref: ~p , Pid: ~p, Info: ~p, Reason: ~p State: ~p~n", [Ref, Pid, Info, Reason, ProcState]),
+  sendGfxServerCrashAlert(Pid, Ref, Reason),
   {noreply, State};
 
 handle_info(_Info, State) ->
   {noreply, State}.
 
+
 terminate(Reason, State) ->
-  io:format("rplServer terminate, Reason: ~p~n", [Reason]),
-  [].
+  io:format("rplServer terminate, Reason: ~p State: ~p~n", [Reason, State]),
+  exit({rplCrash, Reason, State}).
+
+
+sendGfxServerCrashAlert(Pid, Ref, Reason) ->
+  %TODO - Uncomment this and check this
+  %gen_server:call(?GFX_SERVER, {element(1, Reason), Pid, Ref, element(2, Reason)}),
+  Pid.

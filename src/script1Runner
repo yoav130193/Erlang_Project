@@ -1,9 +1,17 @@
 
 % FOR DEMO
+Computer A:
+erl -sname amir
+script:compileAll().
 
+Computer B:
+erl -sname yoav
+c(script).
+script:script1().
+
+% ON MY TERMINAL
 erl
 c(script).
-
 script:script1().
 
 gen_server:cast(rplServer,{buildNetwork}).
@@ -12,7 +20,8 @@ gen_server:cast(rplServer,{downwardDigraphBuild}).
 
 %***********    UNICAST MESSAGES     **********%
 %WITH PATH
-gen_server:cast(rplServer,{sendUnicastMessage, <0.129.0>,<0.131.0>,"HEY"}).
+gen_server:cast(rplServer,{sendUnicastMessage, <0.127.0>,<0.133.0>,"HEY"}).
+gen_server:cast(rplServer,{sendUnicastMessage, <0.133.0>,<0.127.0>,"HEY"}).
 gen_server:cast(rplServer,{sendUnicastMessage, <0.131.0>,<0.129.0>,"HEY"}).
 gen_server:cast(rplServer,{sendUnicastMessage, <0.131.0>,<0.132.0>,"HEY"}).
 gen_server:cast(rplServer,{sendUnicastMessage, <0.132.0>,<0.131.0>,"HEY"}).
