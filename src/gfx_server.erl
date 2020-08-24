@@ -14,8 +14,7 @@
 
 -import(util,[integer_to_atom/1]).
 -import(funcGenerator,[generateSin/2,generatePolynom/2,solveP/3,solveS/3]).
--export([start/1, init/1, terminate/2, code_change/3,
-  handle_info/2, handle_call/3, handle_cast/2, handle_event/2,start_global/1]).
+-export([start/1, init/1, terminate/2, code_change/3, handle_info/2, handle_call/3, handle_cast/2, handle_event/2,start_global/1]).
 -compile(export_all).
 -include_lib("wx/include/wx.hrl").
 
@@ -334,6 +333,9 @@ handle_cast(draw, State) ->
   {_Reply,NewState} = draw(State),
   %io:format("got draw ~n"),
   {noreply,NewState};
+
+handle_cast(pathList,State) ->
+  {noreply,State};
 %%data Rx from drones
 handle_cast(_Msg, State) ->
   {noreply,State}.
