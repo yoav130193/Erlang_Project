@@ -465,7 +465,7 @@ init_layout(Mode,Node) ->
   %% order UI elements in sizers %%
   %% create UI sizers %%
   wxWindow:setSizer(Frame, MainSizer),
-  wxSizer:setSizeHints(MainSizer,Frame),
+  %wxSizer:setSizeHints(MainSizer,Frame),
   %wxWindow:setMinSize(Frame,wxWindow:getSize(Frame)),
   CreateSizer = wxBoxSizer:new(?wxVERTICAL),
   Q1Sizer = wxBoxSizer:new(?wxVERTICAL),
@@ -552,7 +552,7 @@ init_layout(Mode,Node) ->
   wxButton:disable(SendMsgBtn),
   %% show frame %%
   wxPanel:connect(Panel, left_down),
-  wxPanel:connect(Panel, paint, [callback]),
+  %wxPanel:connect(Panel, paint, [callback]),
   wxFrame:show(Frame),
   %io:format("~p~n",[wxPanel:getSize(Panel)]),
   #state
@@ -686,7 +686,7 @@ pid_to_string(Pid) when is_pid(Pid) ->
   %io:format("~p~n" ,[Pid]),
   PidStr = pid_to_list(Pid),
   PidStr1 = lists:sublist(PidStr, 2, length(PidStr)-2),
-  [list_to_integer(T) || T <- string:tokens(PidStr1,[$.])];
+  [N, P1, P2] = [list_to_integer(T) || T <- string:tokens(PidStr1,[$.])];
 % {N, P1, P2};
 pid_to_string(Pid) when is_integer(Pid) ->
   %io:format("~p ~p *********  ~n",[Pid,integer_to_string(Pid)]),
