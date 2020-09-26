@@ -23,7 +23,7 @@ solveP(Func,X,Acc) -> solveP(tl(Func),X,Acc + partialSolveP(hd(Func),X)).
 partialSolveP({Coeff,Power},X) -> Coeff*math:pow(X,Power).
 
 %generateSin(0,Function) -> lists:reverse([{(rand:uniform(2000) - 1000) / 2000,0} | Function]);
-generateSin(Coef,Function) ->{Coef,rand:uniform(950)}.
+generateSin(Coef,Function) ->{Coef,rand:uniform(250)}.
 % generateSin(NumOfElements,Function) -> generateSin(NumOfElements -1,[{(rand:uniform(1000) - 500) , generatePolynom(NumOfElements,[])}|Function]).
 
 

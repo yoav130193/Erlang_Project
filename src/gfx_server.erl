@@ -23,7 +23,8 @@
 -define(ImageSizeX, 15).
 -define(ImageSizeY, 11).
 -define(DEFAULTSPEED, 100).
--define(MapSize, 1000).
+-define(MapSize, 500).
+-define(GridMapSize,?MapSize div 2).
 -define(DroneSize, 20).
 -define(SERVER,?MODULE).
 -define(GRAPH_ACC,5).
@@ -39,6 +40,9 @@
 -define(testCords,{500,500}).
 -define(radius,50).
 -define(transformedMap,1000).
+-define(locationEts,locationEts).
+-define(nodePidsEts,nodePidsEts).
+
 -record(state,{appState,newRootBtn,movementList,nodeTypetoCreate,newNodeBtn,sendMsg,moveType,quit,
   node_list_q_1,node_list_q_2,node_list_q_3,node_list_q_4,nq1,nq2,nq3,nq4,panel,size,frame,
   protocolServer,msgTextBox,mode,node,id,locationMap,msg,numOfNodes,numOfRoots,tableID,msgState,
@@ -57,12 +61,21 @@ start(Node) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 init([Mode,Node]) ->
   %InitState = init_test(Mode,Node),
+  ets:new(?locationEts, [set, named_table, public,{read_concurrency, true}]),
+  ets:new(?nodePidsEts, [bag, named_table, public]),
   InitState = init_layout(Mode,Node),
   io:format("done init ~n"),
   {InitState#state.frame,InitState}.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Re-Paint Event - called by refresh
+handle_sync_event(#wx{event=#wxPaint{}}, _, State ) ->
+  io:format("entered draw event ~n"),
+  io:format("~p~n",[State#state.locationMap]),
+  draw(State),
+  ok.
+
 
 %% event by choosing Storing Mode
 handle_event(#wx{obj  = StoringCheckBox, event = #wxCommand{type = command_checkbox_clicked}},
@@ -301,24 +314,40 @@ handle_event(#wx{obj = RemoveSrc, event = #wxCommand{type = command_button_click
   NewState = State#state{src = nullptr,destinations = #{},msgState = notStarted},
   {noreply,NewState};
 
+handle_event(#wx{event = #wxClose{}},State = #state{frame = Frame,panel = Panel}) ->
+  %%wxPanel:destroy(Panel),
+  %%wxFrame:destroy(Frame),
+  io:format("Exiting~n"),
+  wx:destroy(),
+  {stop,normal,State};
+
+handle_event(#wx{obj = QuitBtn, event = #wxClose{type = command_combobox_selected}},
+    State = #state{quit = QuitBtn,frame = Frame,panel = Panel}) ->
+  wxPanel:destroy(Panel),
+  wxFrame:destroy(Frame),
+  io:format("Exiting~n"),
+  {stop,normal,State};
+
 %%create root event
 handle_event(#wx{obj = NewRootBtn, event = #wxCommand{type = command_button_clicked}},
-    State = #state{frame = _Frame,newRootBtn = NewRootBtn}) ->
+    State = #state{frame = _Frame,newRootBtn = NewRootBtn,panel = Panel}) ->
   {Result,StateA} = create(root,State),
   if
     Result == error -> {noreply,State} ;
     true ->
-      {_DrawStatus,StateB} = draw(StateA),
-      {noreply,StateB}
+      %{_DrawStatus,StateB} = draw(StateA),
+      wxWindow:refresh(Panel),
+      %wxPanel:refresh(Panel),
+      {noreply,StateA}
   end;
 %%create node event
 handle_event(#wx{obj = NewNodeBtn, event = #wxCommand{type = command_button_clicked}},
-    State = #state{newNodeBtn = NewNodeBtn}) ->
+    State = #state{newNodeBtn = NewNodeBtn,panel = Panel}) ->
   {Result,StateA} = create(node,State),
   if
     Result == error -> {noreply,State} ;
     true ->
-      {_DrawStatus,StateB} = draw(StateA),
+      {_DrawStatus,StateB} = wxPanel:refresh(Panel),
       {noreply,StateB}
   end.
 
@@ -327,16 +356,18 @@ handle_info(_Msg, State) ->
   %io:format("Got Info ~p~n",[Msg]),
   {noreply, State}.
 
-handle_call({draw}, _From, State) ->
-  draw(State),
+handle_call({draw}, _From, State = #state{panel = Panel}) ->
+  wxPanel:refresh(Panel),
   %io:format("got draw ~n"),
   Reply = ok,
   {reply,Reply,State}.
 
-handle_cast(draw, State) ->
-  {_Reply,NewState} = draw(State),
+handle_cast(draw, State = #state{panel = Panel}) ->
+  %{_Reply,NewState} = wxPanel:refresh(Panel),
+  wxPanel:refresh(Panel),
   %io:format("got draw ~n"),
-  {noreply,NewState};
+  %{noreply,NewState};
+  {noreply,State};
 
 handle_cast({pathList,PathList},State) ->
   NewState = State#state{pathList = PathList},
@@ -349,6 +380,8 @@ code_change(_, _, State) ->
   {stop, ignore, State}.
 
 terminate(_Reason, _) ->
+  io:format("entered terminate ~n"),
+  wx:destroy(),
   ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -541,7 +574,7 @@ init_layout(Mode,Node) ->
   wxListBox:connect(Node_list_q_3,command_listbox_selected),
   wxListBox:connect(Node_list_q_4,command_listbox_selected),
   wxComboBox:connect(MovementChooser, command_combobox_selected),
-  wxButton:connect(QuitBtn,command_button_clicked),
+  wxButton:connect(QuitBtn,command_combobox_selected),
   %% config ui for start of run %%
   wxButton:disable(SendMsgBtn),
   wxButton:disable(NewNodeBtn),
@@ -552,7 +585,7 @@ init_layout(Mode,Node) ->
   wxButton:disable(SendMsgBtn),
   %% show frame %%
   wxPanel:connect(Panel, left_down),
-  %wxPanel:connect(Panel, paint, [callback]),
+  wxPanel:connect(Panel, paint, [callback]),
   wxFrame:show(Frame),
   %io:format("~p~n",[wxPanel:getSize(Panel)]),
   #state
@@ -581,7 +614,7 @@ create(RootOrNode, State = #state{locationMap = LocationMap,numOfRoots = NumOfRo
   {Func,Type} = case State#state.moveType of
                   "Random" -> {random,random};
                   "Polynomial" -> {funcGenerator:generatePolynom(rand:uniform(3),[]),polynomial};
-                  "Sinusoidal" -> {funcGenerator:generateSin(rand:uniform(500),[]),sinusoidal};
+                  "Sinusoidal" -> {funcGenerator:generateSin(rand:uniform(100),[]),sinusoidal};
                   _ -> badArguement
                 end,
   X = rand:uniform(?MapSize),
@@ -590,16 +623,20 @@ create(RootOrNode, State = #state{locationMap = LocationMap,numOfRoots = NumOfRo
                       polynomial -> getStartingPos(Func,Type,X,RootOrNode, State);
                       sinusoidal -> getStartingPos(Func,Type,X,RootOrNode, State)
                     end,
-  {Pid,Ref} = gen_server:cast(rplServer, {addNode, root}),
-  %Pid = rand:uniform(100),
-  %Ref = rand:uniform(100),
-  NewLocMap = maps:put(Pid,{Ref,NumOfRoots,root,Func,Type,?incerement, {FinalX,FinalY}},LocationMap),
+  %%{Pid,Ref} = gen_server:cast(rplServer, {addNode, root}),
+  Pid = rand:uniform(100),
+  Ref = rand:uniform(100),
+  %NewLocMap = maps:put(Pid,{Ref,NumOfRoots,RootOrNode,Func,Type,?incerement, {FinalX,FinalY}},LocationMap),
+  ets:insert(?nodePidsEts,{nodePid,Pid}),
+  PidList = ets:lookup(?nodePidsEts,nodePid),
+  io:format("pidlist:: ~p~n",[PidList]),
+  ets:insert(?locationEts,{Pid,{Ref,NumOfRoots,RootOrNode,Func,Type,?incerement, {FinalX,FinalY}}}),
   % NewLocMap = maps:put(Pid,{Ref,NumOfRoots,root,Func,Type,?incerement,{0,0}},LocationMap),
   %drawNodes(maps:to_list(NewLocMap),State#state.panel),
   %drawNode(erlang:element(7,maps:get(Pid,NewLocMap)),State#state.panel),
   NewState = case RootOrNode of
-               root -> State#state{locationMap = NewLocMap,numOfRoots = NumOfRoots + 1};
-               node -> State#state{locationMap = NewLocMap,numOfNodes = NumOfNodes + 1}
+               root -> State#state{numOfRoots = NumOfRoots + 1};
+               node -> State#state{numOfNodes = NumOfNodes + 1}
              end,
   if
     RootOrNode == root -> {root_OK,NewState};
@@ -620,22 +657,51 @@ getStartingPos(Func,Type,X,_RootOrNode, _State) ->
   end.
 
 
-draw(State = #state{locationMap = LocationMap, panel = Panel,frame = _Frame}) ->
-  %io:format("entered draw ~n"),
-  LocationsList = maps:to_list(LocationMap),
-  %io:format("erase circles for: ~p~n",[LocationsList]),
-  %wxFrame:clearBackground(Panel),
+draw(State = #state{panel = Panel,node_list_q_1 = Q1,node_list_q_2 = Q2,node_list_q_3 = Q3,node_list_q_4 = Q4}) ->
+  PidList = ets:lookup(?nodePidsEts,nodePid),
+  io:format("~p~n",[PidList]),
+  % io:format("p~n",[ets:lookup()])
   eraseAllOldLocs(Panel),
-  %io:format("enter updateCoordinates ~n"),
-  UpdatedLocationMap = updateAllCoordinates(LocationsList,LocationMap),
-  %io:format("exited updateAllCoordinates ~n"),
-  LocUpdateState = State#state{locationMap = UpdatedLocationMap},
+  drawGrid(Panel),
+  resetQueus(Q1,Q2,Q3,Q4),
+  {Nq1,Nq2,Nq3,Nq4} = update(Panel,PidList,Q1,Q2,Q3,Q4),
+  LocUpdateState = State#state{node_list_q_1 = Nq1,node_list_q_2 = Nq2,node_list_q_3 = Nq3,node_list_q_4 = Nq4},
   NewState =  updateQueues(LocUpdateState),
-  %io:format("exited getupdates list ~n"),
-  %drawNode({rand:uniform(1000),rand:uniform(1000)},Panel),
-  drawNodes(maps:to_list(UpdatedLocationMap),Panel),
-  %io:format("exited drawNodes ~n"),
   {draw_OK,NewState}.
+
+update(Panel,[{nodePid,Pid}|[]],Q1,Q2,Q3,Q4) ->
+  [{Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y}}}] = ets:lookup(?locationEts,Pid),
+  {Nq1,Nq2,Nq3,Nq4} = insertToQueues(Pid,{X,Y},NodeType,Q1,Q2,Q3,Q4),
+  drawNode({X,Y},Panel),
+  {Nq1,Nq2,Nq3,Nq4};
+update(Panel,[{nodePid,Pid}|T],Q1,Q2,Q3,Q4) ->
+  [{Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y}}}] = ets:lookup(?locationEts,Pid),
+  io:format("table enrty for ~p : ~p~n",[Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y}}]),
+  {NewX,NewY} = updateLocation({Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y}}}),
+  io:format("table enrty for ~p : ~p~n",[Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{NewX,NewY}}]),
+  {Nq1,Nq2,Nq3,Nq4} = insertToQueues(Pid,{X,Y},NodeType,Q1,Q2,Q3,Q4),
+  drawNode({NewX,NewY},Panel),
+  update(Panel,T,Nq1,Nq2,Nq3,Nq4).
+
+updateLocation({Pid,{Ref,NumOfRoots,_NodeType,Func,MovementType,Direction,{X,Y}}}) ->
+  {NewX,NewY,NewDirection} = case MovementType of
+                               random -> getRandomCoordinates(X,Y);
+                               polynomial -> getPolynomialCoordinates(Func,Direction,X);
+                               sinusoidal -> getSinusoidalCoordinates(Func,Direction,X)
+                             end,
+  io:format("exited getXcoordinates  old:~p   new:  ~p~n", [{X,Y},{NewX,NewY}]),
+  ets:insert(?locationEts,{Pid,{Ref,NumOfRoots,_NodeType,Func,MovementType,NewDirection,{NewX,NewY}}}),
+  {NewX,NewY}.
+
+
+
+drawGrid(Panel) ->
+  Paint = wxPaintDC:new(Panel),
+  Brush = wxBrush:new(?wxBLACK,[{style,?wxTRANSPARENT}]),
+  wxDC:setBrush(Paint,Brush),
+  wxDC:drawLine(Paint,{0,?GridMapSize},{?MapSize,?GridMapSize}),
+  wxDC:drawLine(Paint,{?GridMapSize,0},{?GridMapSize,?MapSize}),
+  wxPaintDC:destroy(Paint).
 
 resetQueue(_,true) -> {ok};
 resetQueue(Q_n,false) ->
@@ -643,44 +709,46 @@ resetQueue(Q_n,false) ->
   Flag = wxListBox:isEmpty(Q_n),
   resetQueue(Q_n,Flag).
 
-updateQueues(State = #state{node_list_q_4 = Q4,node_list_q_3 = Q3,node_list_q_2 = Q2,node_list_q_1 = Q1,locationMap = LocationMap,nq1 = Nq1,nq2 = Nq2,nq3 = Nq3,nq4 = Nq4}) ->
+resetQueus(Q1,Q2,Q3,Q4) ->
   resetQueue(Q1,wxListBox:isEmpty(Q1)),
   resetQueue(Q2,wxListBox:isEmpty(Q2)),
   resetQueue(Q3,wxListBox:isEmpty(Q3)),
-  resetQueue(Q4,wxListBox:isEmpty(Q4)),
-  LocationList = maps:to_list(LocationMap),
-  {NewQ1,NewQ2,NewQ3,NewQ4} = insertToQueues(LocationList,Q1,Q2,Q3,Q4),
+  resetQueue(Q4,wxListBox:isEmpty(Q4)).
+
+updateQueues(State = #state{node_list_q_4 = Q4,node_list_q_3 = Q3,node_list_q_2 = Q2,node_list_q_1 = Q1,nq1 = Nq1,nq2 = Nq2,nq3 = Nq3,nq4 = Nq4}) ->
+  %{NewQ1,NewQ2,NewQ3,NewQ4} = insertToQueues(ets:lookup(?nodePidsEts,nodePid),Q1,Q2,Q3,Q4),
+  io:format("crash here 6~n"),
   wxStaticText:setLabel(Nq1,integer_to_string(wxListBox:getCount(Q1))),
   wxStaticText:setLabel(Nq2,integer_to_string(wxListBox:getCount(Q2))),
   wxStaticText:setLabel(Nq3,integer_to_string(wxListBox:getCount(Q3))),
   wxStaticText:setLabel(Nq4,integer_to_string(wxListBox:getCount(Q4))),
-  State#state{node_list_q_1 = NewQ1,node_list_q_2 = NewQ2,node_list_q_3 = NewQ3,node_list_q_4 = NewQ4}.
+  State.
 
-insertToQueues([],Q1,Q2,Q3,Q4) ->
-  %io:format("updated Queues ~n"),y`
-  {Q1,Q2,Q3,Q4};
-insertToQueues(LocationList,Q1,Q2,Q3,Q4) ->
-  {Pid,{_Ref,_NumOfRoots,_NodeType,_Func,_Type,_Direction,{X,Y}}}= hd(LocationList),
-  AtomString = case _NodeType of
+insertToQueues(Pid,{X,Y},NodeType,Q1,Q2,Q3,Q4) ->
+  AtomString = case NodeType of
                  root -> "r_";
                  node -> "n_"
                end,
   PidString = pid_to_string(Pid),
+  io:format("~p~n",[PidString]),
   ListKey = AtomString ++ PidString,
   case {X,Y}  of
-    {X1,Y1} when X1 >= 500 andalso Y1 >= 500 ->
+    {X1,Y1} when X1 >= ?GridMapSize andalso Y1 >= ?GridMapSize ->
       wxListBox:append(Q1,[ListKey]),
-      insertToQueues(tl(LocationList),Q1,Q2,Q3,Q4);
-    {X2,Y2} when X2 < 500 andalso Y2 > 500 ->
+      io:format("crash here 1~n");
+    {X2,Y2} when X2 < ?GridMapSize andalso Y2 > ?GridMapSize ->
       wxListBox:append(Q2,[ListKey]),
-      insertToQueues(tl(LocationList),Q1,Q2,Q3,Q4);
-    {X3,Y3} when X3 =< 500 andalso Y3 =< 500 ->
+      io:format("crash here 2~n");
+    {X3,Y3} when X3 =< ?GridMapSize andalso Y3 =< ?GridMapSize ->
       wxListBox:append(Q3,[ListKey]),
-      insertToQueues(tl(LocationList),Q1,Q2,Q3,Q4);
+      io:format("crash here 3~n");
     _ ->
       wxListBox:append(Q4,[ListKey]),
-      insertToQueues(tl(LocationList),Q1,Q2,Q3,Q4)
-  end.
+      io:format("crash here 4~n")
+  end,
+  io:format("crash here 5~n"),
+  {Q1,Q2,Q3,Q4}.
+
 
 pid_to_string(Pid) when is_pid(Pid) ->
   %io:format("~p~n" ,[Pid]),
@@ -688,15 +756,14 @@ pid_to_string(Pid) when is_pid(Pid) ->
   PidStr1 = lists:sublist(PidStr, 2, length(PidStr)-2),
   [N, P1, P2] = [list_to_integer(T) || T <- string:tokens(PidStr1,[$.])];
 % {N, P1, P2};
-pid_to_string(Pid) when is_integer(Pid) ->
-  %io:format("~p ~p *********  ~n",[Pid,integer_to_string(Pid)]),
-  integer_to_string(Pid).
-updateAllCoordinates([H|[]],LocationMap) ->
-  %io:format("enter updateCoordinate: ~p ~n",[H]),
-  updateCoordinates(H,LocationMap);
-updateAllCoordinates(LocationList,LocationMap) ->
-  NewMap = updateCoordinates(hd(LocationList),LocationMap),
-  updateAllCoordinates(tl(LocationList),NewMap).
+pid_to_string(Pid) when is_integer(Pid) -> integer_to_string(Pid).
+%updateAllCoordinates([H|[]],Panel) ->
+% io:format("enter updateCoordinate: ~p ~n",[H]),
+%updateCoordinates(H);
+%updateAllCoordinates(PidList,Panel) ->
+%  io:format("enter updateCoordinate: ~p~n",[hd(PidList)]),
+% updateCoordinates(hd(PidList)),
+%updateAllCoordinates(tl(PidList)).
 
 
 
@@ -717,45 +784,47 @@ drawNodes(LocationsList,Panel) ->
 getXY({_,{_,_,_,_,_,_,{X,Y}}}) -> {X,Y}.
 
 drawNode({X,Y},Panel) ->
-  Paint = wxPaintDC:new(Panel),
+  io:format("entered draw ~n"),
+  Paint = wxClientDC:new(Panel),
+  io:format("created paint ~n"),
   %Brush = wxBrush:new(?wxBLACK),
   Brush = wxBrush:new(?wxBLACK,[{style,?wxTRANSPARENT}]),
+  io:format("created brush ~n"),
   %%wxBrush:setColour(Brush, ?wxBLUE),
   %%wxBrush:setColour(Brush, 10,10,30),
-  wxDC:setBrush(Paint,Brush),
+  wxClientDC:setBrush(Paint,Brush),
+  io:format("set brush ~n"),
   %WxG=wxGraphicsContext:create(),
   %%wxGraphicsContext:drawEllipse(WxG,100,100,100,100),
-  wxDC:drawCircle(Paint ,{X,Y},?radius),  %draw circle center at {X,Y}
+  io:format("~p~n",[{X,Y}]),
+  wxClientDC:drawCircle(Paint ,{X,Y},?radius),  %draw circle center at {X,Y}
   %io:format("drawing circle~n"),
   wxBrush:setColour(Brush, ?wxSheikBlue),
-  wxDC:setBrush(Paint,Brush),
-  wxDC:drawCircle(Paint ,{X,Y},?radius - 1),  %draw circle center at {X,Y}
-  wxPaintDC:destroy(Paint).
+  wxClientDC:setBrush(Paint,Brush),
+  wxClientDC:drawCircle(Paint ,{X,Y},?radius - 1),  %draw circle center at {X,Y}
+  wxClientDC:destroy(Paint).
 
 eraseNodes(Panel) ->
   Paint = wxPaintDC:new(Panel),
   Brush = wxBrush:new(?wxSheikBlue),
-  %%wxBrush:setColour(Brush, ?wxBLUE),
-  %%wxBrush:setColour(Brush, 10,10,30),
   wxDC:setBrush(Paint,Brush),
-  %WxG=wxGraphicsContext:create(),
-  %%wxGraphicsContext:drawEllipse(WxG,100,100,100,100),
-  %wxDC:drawCircle(Paint ,{X,Y},?radius+1),  %draw circle center at {X,Y}
-  %wxDC:drawCircle(Paint ,{X,Y},?radius+10),  %draw circle center at {X,Y}
   wxDC:drawRectangle(Paint,{0,0},{?MapSize,?MapSize}),
-  %wxDC:drawCircle(Paint ,{X,Y},?radius),  %draw circle center at {X,Y}
   wxPaintDC:destroy(Paint).
 
-updateCoordinates({Pid,{Ref,NumOfRoots,_DontCare,Func,MovementType,Direction,{X,Y}}},LocationMap) ->
-  %io:format("~p~n",[MovementType]),
+
+%updateCoordinates({Pid,{Ref,NumOfRoots,_DontCare,Func,MovementType,Direction,{X,Y}}}) ->
+updateCoordinates({nodePid,Pid}) ->
+  io:format("~p~n",[ets:lookup(?locationEts,Pid)]),
+  [{Pid,{Ref,NumOfRoots,_DontCare,Func,MovementType,Direction,{X,Y}}}] = ets:lookup(?locationEts,Pid),
   {NewX,NewY,NewDirection} = case MovementType of
                                random -> getRandomCoordinates(X,Y);
                                polynomial -> getPolynomialCoordinates(Func,Direction,X);
                                sinusoidal -> getSinusoidalCoordinates(Func,Direction,X)
                              end,
-  %io:format("exited getXcoordinates  old:~p   new:  ~p~n", [{X,Y},{NewX,NewY}]),
-  NewLocationsMap = maps:update(Pid,{Ref,NumOfRoots,_DontCare,Func,MovementType,NewDirection,{NewX,NewY}},LocationMap),
-  NewLocationsMap.
+  io:format("exited getXcoordinates  old:~p   new:  ~p~n", [{X,Y},{NewX,NewY}]),
+  ets:insert(?locationEts,{Pid,{Ref,NumOfRoots,_DontCare,Func,MovementType,NewDirection,{NewX,NewY}}}).
+%NewLocationsMap = maps:update(Pid,{Ref,NumOfRoots,_DontCare,Func,MovementType,NewDirection,{NewX,NewY}},LocationMap),
+%NewLocationsMap.
 
 getRandomCoordinates(X,Y) ->
   %io:format("before random coordinates ~n"),
@@ -787,6 +856,7 @@ getPolynomialCoordinates(Func,Direction,X) ->
                (NewY > ?MapSize) orelse (NewY < 0) -> getPolynomialCoordinates(Func, Direction,X + ?polynomDelta);
                true ->
                  %  io:format("T = ~p OldX = ~p NewX = ~p NewY = ~p~n",[T,X,NewX,erlang:floor(NewY)]),
+                 io:format("new Y = ~p~n",[erlang:floor(NewY)]),
                  {X + ?polynomDelta,erlang:floor(NewY),Direction}
              end
          end;
@@ -800,6 +870,7 @@ getPolynomialCoordinates(Func,Direction,X) ->
                 NewY > ?MapSize orelse NewY < 0 -> getPolynomialCoordinates(Func, Direction,X - ?polynomDelta);
                 true ->
                   % io:format("T = ~p NewX = ~p NewY = ~p~n",[T, NewX,erlang:floor(NewY)]),
+                  io:format("new Y = ~p~n",[erlang:floor(NewY)]),
                   {X - ?polynomDelta,erlang:floor(NewY),Direction}
               end
           end
@@ -820,6 +891,7 @@ getSinusoidalCoordinates(Func,Direction,X) ->
                (NewY > ?MapSize) orelse (NewY < 0) -> getSinusoidalCoordinates(Func, Direction,X + ?sinDelta);
                true ->
                  %io:format("T = ~p OldX = ~p NewX = ~p NewY = ~p~n",[T,X,NewX,erlang:floor(NewY)]),
+                 io:format("new Y = ~p~n",[erlang:floor(NewY)]),
                  {X + ?sinDelta,erlang:floor(NewY),Direction}
              end
          end;
@@ -833,10 +905,11 @@ getSinusoidalCoordinates(Func,Direction,X) ->
                 NewY > ?MapSize orelse NewY < 0 -> getSinusoidalCoordinates(Func, Direction,X - ?sinDelta);
                 true ->
                   %io:format("T = ~p NewX = ~p NewY = ~p~n",[T, NewX,erlang:floor(NewY)]),
+                  io:format("new Y = ~p~n",[erlang:floor(NewY)]),
                   {X - ?sinDelta,erlang:floor(NewY),Direction}
               end
           end
   end.
 
-transformXtoT(X) -> 2*X - 1000.
-transformTtoX(T) -> (T/2) + 500.
+transformXtoT(X) -> 2*X - ?MapSize.
+transformTtoX(T) -> (T + ?MapSize) / 2.
