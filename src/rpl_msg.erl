@@ -23,9 +23,15 @@ dioMsg(DodagId, Rank, Version, Mop) ->
   #dioMsg{rplInstanceId = 0, versionNumber = Version, rank = Rank, mop = Mop, dtsn = 0, dodagId = DodagId}.
 
 % Called from the Nodes to send Dio Msg
+sendDioToNeighbors(Pid, DodagId, Rank, Version, Mop, []) ->
+  io:format("DODAG_ID: ~p DIO_MSG, root: ~p, No Neighbors ~n~n", [DodagId, Pid]),
+  DioMsg = dioMsg(DodagId, Rank, Version, Mop),
+  ets:insert(?MSG_TABLE, {#msg_table_key{dodagId = DioMsg#dioMsg.dodagId, from = self(), to = []}, {msg}}),
+  utils:deleteMessageFromEts(DioMsg#dioMsg.dodagId, self(), [], {finishedBuilding}, dio);
+
 sendDioToNeighbors(Pid, DodagId, Rank, Version, Mop, Neighbors) ->
   DioMsg = dioMsg(DodagId, Rank, Version, Mop),
-  %io:format("DODAG_ID: ~p ,DIO message from: ~p, sends to: ~p~nmsg: ~p~n~n", [DodagId, Pid, Neighbors, DioMsg]),
+  io:format("DODAG_ID: ~p ,DIO message from: ~p, sends to: ~p msg: ~p~n~n", [DodagId, Pid, Neighbors, DioMsg]),
   %saveDioToFile(self(), Neighbors, DodagId, Version, Rank),
   lists:foreach(fun(Element) ->
     ets:insert(?MSG_TABLE, {#msg_table_key{dodagId = DioMsg#dioMsg.dodagId, from = self(), to = element(1, Element)}, {msg}}),
