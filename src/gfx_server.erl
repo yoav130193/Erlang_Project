@@ -44,7 +44,7 @@
   node_list_q_1,node_list_q_2,node_list_q_3,node_list_q_4,nq1,nq2,nq3,nq4,panel,size,frame,
   protocolServer,msgTextBox,mode,node,id,locationMap,msg,numOfNodes,numOfRoots,tableID,msgState,
   src,destinations,srcTextBox,destinationCombobox,startBtn,storing_checkbox,nonStoring_checkbox,
-  removeSrcBtn,removeDstBtn,msgID,pathList,debug}).
+  removeSrcBtn,removeDstBtn,msgID,pathList,debug,createdFirst}).
 
 
 
@@ -58,10 +58,11 @@ start(Node) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 init([Mode,Node]) ->
   %InitState = init_test(Mode,Node),
-  ets:new(?locationEts, [set, named_table, public,{read_concurrency, true}]),
-  ets:new(?nodePidsEts, [bag, named_table, public]),
-  ets:new(?pidStringEts,[set, named_table, public]),
-  ets:new(?pathEts,[set, named_table, public,{read_concurrency, true}]),
+  ets:new(?locationEts, [set, named_table, public,{read_concurrency, true},{heir,whereis(?APP_MAIN_PID), {gfxCrash,?locationEts}}]),
+  ets:new(?nodePidsEts, [bag, named_table, public,{heir, whereis(?APP_MAIN_PID), {gfxCrash,?nodePidsEts}}]),
+  ets:new(?pidStringEts,[set, named_table, public,{heir, whereis(?APP_MAIN_PID), {gfxCrash,?pidStringEts}}]),
+  ets:new(?pathEts,[set, named_table, public,{read_concurrency, true},{heir, whereis(?APP_MAIN_PID), {gfxCrash,?pathEts}}]),
+  process_flag(trap_exit, true),
   InitState = init_layout(Mode,Node),
   io:format("done init ~n"),
   {InitState#state.frame,InitState}.
@@ -73,6 +74,20 @@ handle_sync_event(#wx{event=#wxPaint{}}, _, State) ->
   draw(State),
   ok.
 
+
+%% event by pressing start btn
+handle_event(#wx{obj  = StartBtn, event = #wxCommand{type = command_button_clicked}},
+    State = #state{storing_checkbox = StoringCheckBox,startBtn = StartBtn,nonStoring_checkbox = NStoringCheckBox}) ->
+  Flag = wxCheckBox:isChecked(StoringCheckBox),
+  if
+    Flag == true ->
+      Response = rplServer:start_link(?STORING);
+    true ->
+      Response = rplServer:start_link(?NON_STORING)
+  end,
+  io:format("start response ~p~n",[Response]),
+  wxButton:disable(StartBtn),
+  {noreply,State};
 
 %% event by choosing Storing Mode
 handle_event(#wx{obj  = StoringCheckBox, event = #wxCommand{type = command_checkbox_clicked}},
@@ -352,6 +367,10 @@ handle_event(#wx{obj = RemoveSrc, event = #wxCommand{type = command_button_click
   ets:insert(?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},normal}}),
   wxTextCtrl:changeValue(SrcTextBox,"Source : null"),
   %wxStaticText:setLabel(SrcTextBox,"Source: null"),
+  PidList = ets:tab2list(?locationEts),
+  io:format("ets table: ~p~n",[PidList]),
+  lists:foreach(fun({Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_}}) ->
+    ets:insert(?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},normal}}) end,PidList),
   io:format("remove src event Text value = ~p~n",[wxTextCtrl:getValue(SrcTextBox)]),
   resetQueue(DestinationComboBox,wxListBox:isEmpty(DestinationComboBox)),
   wxButton:disable(RemoveSrc),
@@ -401,11 +420,6 @@ handle_event(#wx{obj = NewNodeBtn, event = #wxCommand{type = command_button_clic
       {noreply,_StateA}
   end.
 
-%% Callbacks handled as normal gen_server callbacks
-handle_info(_Msg, State) ->
-  %io:format("Got Info ~p~n",[Msg]),
-  {noreply, State}.
-
 handle_call({draw}, _From, State = #state{panel = Panel}) ->
   wxPanel:refresh(Panel),
   %io:format("got draw ~n"),
@@ -413,17 +427,22 @@ handle_call({draw}, _From, State = #state{panel = Panel}) ->
   {reply,Reply,State}.
 
 %% handle event for sending a message from the RPL server - when there is an empty path
-handle_cast({messageSent,MsgId,[]}, State = #state{}) ->
+handle_cast({messageSent,_MsgId,[]}, State = #state{}) ->
   %%insert to queue of unsent messages
   NewState = State#state{msgState = notStarted},
   {noreply,NewState};
 
 %% handle event for sending a message from the RPL server.
-handle_cast({messageSent,MsgId,Pathlist}, State = #state{}) ->
+handle_cast({messageSent,MsgId,Pathlist}, State = #state{destinationCombobox = DestinationQeueu,srcTextBox = SrcTextBox}) ->
   Path = makePath(Pathlist),
   io:format("msgRecieved: MsgId = ~p , Path = ~p~n",[MsgId,Path]),
   ets:insert(?pathEts,{MsgId,Path}),
-  NewState = State#state{msgState = notStarted},
+  PidList = ets:tab2list(?locationEts),
+  lists:foreach(fun({Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_}}) ->
+    ets:insert(?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},normal}}) end,PidList),
+  resetQueue(DestinationQeueu,wxListBox:isEmpty(DestinationQeueu)),
+  wxTextCtrl:changeValue(SrcTextBox,"Source : null"),
+  NewState = State#state{msgState = notStarted,src = nullptr},
   {noreply,NewState};
 
 handle_cast(draw, State = #state{panel = Panel}) ->
@@ -436,10 +455,26 @@ handle_cast(draw, State = #state{panel = Panel}) ->
 handle_cast(_Msg, State) ->
   {noreply,State}.
 
+% Handle falls from root or Node Server
+handle_info({'DOWN', Ref, process, Pid, {Info, Reason, ProcState}}, State= #state{storing_checkbox = StoringCheckBox}) ->
+  io:format("rplServer Monitor crash, Ref: ~p , Pid: ~p, Info: ~p, Reason: ~p State: ~p~n", [Ref, Pid, Info, Reason, ProcState]),
+  Flag = wxCheckBox:isChecked(StoringCheckBox),
+  if
+    Flag == true ->
+      Response = rplServer:start_link(?STORING);
+    true ->
+      Response = rplServer:start_link(?NON_STORING)
+  end,
+  io:format("start response ~p~n",[Response]),
+  {noreply, State};
+
+handle_info(_Info, State) ->
+  {noreply, State}.
 code_change(_, _, State) ->
   {stop, ignore, State}.
 
 terminate(_Reason, _) ->
+  whereis(?APP_MAIN_PID)!{gfxTerminate,self(),_Reason},
   io:format("entered terminate ~n"),
   wx:destroy(),
   ok.

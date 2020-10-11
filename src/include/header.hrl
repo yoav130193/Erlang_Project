@@ -22,7 +22,7 @@
 -define(VERSION_RANK, version_rank).
 -define(dis, 75).
 -define(GFX_SERVER,gfx_server).
-
+-define(APP_MAIN_PID,appProcess).
 -define(NODE_1,node1).
 -define(NODE_2,node2).
 -define(NODE_3,node3).
