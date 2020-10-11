@@ -57,6 +57,7 @@ erl
 c(script).
 script:compileAll().
 rr(gfx_server).
+app:start(1,2).
 script:startAllReal().
 
 script:startAll().

@@ -452,10 +452,10 @@ makePath([Head|[H|[]]]) -> {Head,H};
 makePath([Head | [H|T]]) -> [{Head,H} | makePath([H|T])].
 
 
-makeMulticast([H|[]],Src,Msg,MsgId) -> {MsgId,Src,H,Msg};
+makeMulticast([H|[]],Src,Msg,MsgId) -> [{messageFormat,MsgId,Src,H,Msg}];
 makeMulticast([H|T],Src,Msg,MsgId) ->
   io:format("makeMulticast([H|T],Src,Msg):: H = ~p T = ~p~n",[H,T]),
-  [{MsgId,Src,H,Msg} | makeMulticast(T,Src,Msg,MsgId + 1)].
+  [{messageFormat,MsgId,Src,H,Msg}] ++ makeMulticast(T,Src,Msg,MsgId + 1).
 
 removeNodeFromListBox(Node,ListBox) ->
   DstList = listBoxToList(ListBox,false),

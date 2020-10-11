@@ -218,6 +218,7 @@ sendAllMessages(MessageList, Mop) ->
 
 addMessagesToData([], NewData) -> NewData;
 addMessagesToData(MessageList, NewData) ->
+  io:format("messageList = ~p~n",[MessageList]),
   Message = hd(MessageList),
   addMessagesToData(tl(MessageList), updateData(NewData#rplServerData.nodeCount, NewData#rplServerData.rootCount,
     NewData#rplServerData.randomLocationList, NewData#rplServerData.msg_id + 1, NewData#rplServerData.messageList ++
