@@ -11,14 +11,18 @@
 -include("include/header.hrl").
 -behavior(application).
 %% API
--export([start/2, stop/1]).
+-export([start/2, stop/1,draw/0]).
 
 
 start(_StartType,_StartArgs) ->
   script:compileAll(),
   gfx_server:start(1),
-  rplServer:start_link(?STORING).
+  rplServer:start_link(?NON_STORING).
   %spawn(interruptor,loop,[150]).
 
 stop(State) ->
   erlang:error(not_implemented).
+
+
+
+draw() -> spawn(interruptor,loop,[150]).

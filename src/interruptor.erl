@@ -13,5 +13,6 @@
 
 loop(Timeout) ->
   wx_object:cast(gfx_server,draw),
+  %io:format("interrupting ~n"),
   timer:sleep(Timeout),
   loop(Timeout).

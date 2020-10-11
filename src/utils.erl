@@ -23,6 +23,7 @@
 findMeAndNeighbors(Me) ->
   MyNode = hd(ets:lookup(nodeList, Me)),
   Y = ets:tab2list(nodeList),
+  io:format("utils ETS table: ~p~n",[Y]),
   OtherNodeList = [X || X <- Y, element(1, X) =/= element(1, MyNode)],
   {MyNode, utils:findNeighbors(MyNode, OtherNodeList)}.
 
@@ -32,7 +33,10 @@ findNeighbors(MyNodeLocation, NodeLocationList) ->
   [Neighbors || Neighbors <- NodeLocationList, calculateDistance(MyNodeLocation, Neighbors) < ?dis].
 
 % Location = {Pid,X,Y}
-calculateDistance({_, {_, X_Node_1, Y_Node_1}}, {_, {_, X_Node_2, Y_Node_2}}) ->
+%{Pid,{Ref,NumOfRoots,RootOrNode,Func,Type,?incerement,{X,Y},normal}})
+%{_,{_,_,_,_,_,_,{X_Node_1,Y_Node_1},_}}
+%%{_,{_,_,_,_,_,_,{X_Node_2,Y_Node_2},_}}
+calculateDistance({_,{_,_,_,_,_,_,{X_Node_1,Y_Node_1},_}}, {_,{_,_,_,_,_,_,{X_Node_2,Y_Node_2},_}}) ->
   X_distance = erlang:abs(X_Node_1 - X_Node_2),
   Y_distance = erlang:abs(Y_Node_1 - Y_Node_2),
   math:sqrt(X_distance * X_distance + Y_distance * Y_distance).

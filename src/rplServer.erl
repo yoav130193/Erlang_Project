@@ -33,7 +33,7 @@ init(Mop) ->
   io:format(S, "~s~n", ["{DODAG_ID,Message Type,From,To}"]),
   process_flag(trap_exit, true),
   io:format("rplServer init Mop: ~p~n", [Mop]),
-  ets:new(?NODE_LIST, [set, named_table, public]),
+  %ets:new(?NODE_LIST, [set, named_table, public]),
   ets:new(?ROOT_LIST, [set, named_table, public]),
   ets:new(?MSG_TABLE, [set, named_table, public]),
   ets:new(?RPL_REF, [set, named_table, public]),
@@ -52,13 +52,13 @@ init(Mop) ->
 
 % Call from the GUI - addition of a new node
 % Return to the GUI the Pid of the new node
-handle_call({addNode, normal}, _From, Data) ->
+handle_call({addNode, node}, _From, Data) ->
   %{_, Pid} = nodeServer:start_link({Data#rplServerData.nodeCount, Data#rplServerData.mop}),
   {_, {Pid, Ref}} = nodeServer:start_link({Data#rplServerData.nodeCount, Data#rplServerData.mop}),
 %  Pid = 0, Ref = 0,
 %  {_, {Pid, Ref}} = rpc:call(?NODE_1, ?NODE_SERVER, start_link, [{Data#rplServerData.nodeCount, Data#rplServerData.mop}]),
   io:format("rplserver wants to add a normal node: ~p~n", [Pid]),
-  ets:insert(?NODE_LIST, {Pid, {Ref, hd(Data#rplServerData.randomLocationList), hd(tl(Data#rplServerData.randomLocationList))}}),
+ % ets:insert(?NODE_LIST, {Pid, {Ref, hd(Data#rplServerData.randomLocationList), hd(tl(Data#rplServerData.randomLocationList))}}),
   NewData = updateData(Data#rplServerData.nodeCount + 1, Data#rplServerData.rootCount,
     tl(tl(Data#rplServerData.randomLocationList)), Data#rplServerData.msg_id, Data#rplServerData.messageList, Data#rplServerData.mop),
   {reply, {Pid, Ref}, NewData};
@@ -68,8 +68,8 @@ handle_call({addNode, normal}, _From, Data) ->
 handle_call({addNode, root}, _From, Data) ->
   io:format("rplserver wants to add a root node~n"),
   {_, {Pid, Ref}} = rootServer:start_link({Data#rplServerData.rootCount, Data#rplServerData.mop}),
-  ets:insert(?NODE_LIST, {Pid, {Ref, hd(Data#rplServerData.randomLocationList), hd(tl(Data#rplServerData.randomLocationList))}}),
-  ets:insert(?ROOT_LIST, {Pid, {Ref, hd(Data#rplServerData.randomLocationList), hd(tl(Data#rplServerData.randomLocationList))}}),
+%  ets:insert(?NODE_LIST, {Pid, {Ref, hd(Data#rplServerData.randomLocationList), hd(tl(Data#rplServerData.randomLocationList))}}),
+  %ets:insert(?ROOT_LIST, {Pid, {Ref, hd(Data#rplServerData.randomLocationList), hd(tl(Data#rplServerData.randomLocationList))}}),
   NewData = updateData(Data#rplServerData.nodeCount + 1, Data#rplServerData.rootCount + 1,
     tl(tl(Data#rplServerData.randomLocationList)), Data#rplServerData.msg_id, Data#rplServerData.messageList, Data#rplServerData.mop),
   {reply, {Pid, Ref}, NewData}.
@@ -207,11 +207,12 @@ sendAllMessages(MessageList, Mop) ->
   case hd(Mop) of
     ?STORING ->
       Path = gen_server:call(Message#messageFormat.from, {sendMessageStoring, Message#messageFormat.from, Message#messageFormat.to, Message#messageFormat.msg}, 100000),
-      io:format("RPL Server:,Storing Message, From: ~p, To: ~p , Path: ~p~n~n ", [Message#messageFormat.from, Message#messageFormat.to, Path]);
-
+      io:format("RPL Server:,Storing Message, From: ~p, To: ~p , Path: ~p~n~n ", [Message#messageFormat.from, Message#messageFormat.to, Path]),
+      wx_object:cast(gfx_server,{messageSent,Message#messageFormat.msgId,Path});
     ?NON_STORING ->
       Path = gen_server:call(Message#messageFormat.from, {sendMessageNonStoring, Message#messageFormat.from, Message#messageFormat.to, Message#messageFormat.msg}, 100000),
-      io:format("RPL Server:,NON_STORING Message, From: ~p, To: ~p , Path: ~p~n~n ", [Message#messageFormat.from, Message#messageFormat.to, Path])
+      io:format("RPL Server:,NON_STORING Message, From: ~p, To: ~p , Path: ~p~n~n ", [Message#messageFormat.from, Message#messageFormat.to, Path]),
+      wx_object:cast(gfx_server,{messageSent,Message#messageFormat.msgId,Path})
   end,
   sendAllMessages(tl(MessageList), Mop).
 

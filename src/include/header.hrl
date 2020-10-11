@@ -20,7 +20,7 @@
 -define(Update_Addition, 2).
 -define(Update_NO, 1).
 -define(VERSION_RANK, version_rank).
--define(dis, 100).
+-define(dis, 75).
 -define(GFX_SERVER,gfx_server).
 
 -define(NODE_1,node1).
