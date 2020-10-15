@@ -22,11 +22,16 @@
 -define(VERSION_RANK, version_rank).
 -define(dis, 75).
 -define(GFX_SERVER,gfx_server).
--define(APP_MAIN_PID,appProcess).
+-define(APP_SERVER,appServer).
 -define(NODE_1,node1).
 -define(NODE_2,node2).
 -define(NODE_3,node3).
 -define(NODE_4,node4).
+
+-define(locationEts,nodeList).
+-define(nodePidsEts,nodePidsEts).
+-define(pidStringEts,pidStringEts).
+-define(pathEts,pathEts).
 
 -record(daoAckMsg, {rplInstanceId, d = 2#1, reserved = 2#0000000, daoSequence, status = 16#01, dodagId, updateType}).
 -record(daoMsg, {rplInstanceId, k = 2#1, d = 2#1, flags = 8#00, reserved = 16#00, daoSequence, dodagId, updateType}).
