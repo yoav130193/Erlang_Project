@@ -19,32 +19,9 @@
 -include_lib("wx/include/wx.hrl").
 -include("include/header.hrl").
 
--define(MapSize, 750).
--define(GridMapSize,?MapSize div 2).
--define(MyServer,?MODULE).
--define(wxPurple,{16#73,16#26,16#4D,16#FF}).
--define(wxDarkGreen,{16#1F,16#60,16#40,16#FF}).
--define(wxYellow,{16#FF,16#FF,16#4D,16#FF}).
--define(wxOrange,{16#FF,16#99,16#00,16#FF}).
--define(wxDarkCyan,{16#00,16#99,16#99,16#FF}).
--define(wxSheikBlue,{16#F1,16#F9,16#FB,16#FF}).
-%-define(wxSheikBlue,{16#DF,16#FA,16#DE,16#FF}).
--define(RandMovement,5).
--define(polynomDelta,1).
--define(sinDelta,2).
--define(incerement,1).
--define(decrement,-1).
--define(radius,(?MapSize div 10)).
--define(locationEts,nodeList).
--define(nodePidsEts,nodePidsEts).
--define(pidStringEts,pidStringEts).
--define(pathEts,pathEts).
 
--record(state,{appState,newRootBtn,movementList,nodeTypetoCreate,newNodeBtn,sendMsg,moveType,quit,
-  node_list_q_1,node_list_q_2,node_list_q_3,node_list_q_4,nq1,nq2,nq3,nq4,panel,size,frame,
-  protocolServer,msgTextBox,mode,node,id,locationMap,msg,numOfNodes,numOfRoots,tableID,msgState,
-  src,destinations,srcTextBox,destinationCombobox,startBtn,storing_checkbox,nonStoring_checkbox,
-  removeSrcBtn,removeDstBtn,msgID,pathList,debug,createdFirst}).
+
+
 
 
 
@@ -57,11 +34,6 @@ start(Node) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 init([Mode,Node]) ->
-  %InitState = init_test(Mode,Node),
-  ets:new(?locationEts, [set, named_table, public,{read_concurrency, true},{heir,whereis(?APP_MAIN_PID), {gfxCrash,?locationEts}}]),
-  ets:new(?nodePidsEts, [bag, named_table, public,{heir, whereis(?APP_MAIN_PID), {gfxCrash,?nodePidsEts}}]),
-  ets:new(?pidStringEts,[set, named_table, public,{heir, whereis(?APP_MAIN_PID), {gfxCrash,?pidStringEts}}]),
-  ets:new(?pathEts,[set, named_table, public,{read_concurrency, true},{heir, whereis(?APP_MAIN_PID), {gfxCrash,?pathEts}}]),
   process_flag(trap_exit, true),
   InitState = init_layout(Mode,Node),
   io:format("done init ~n"),
@@ -149,8 +121,8 @@ handle_event(#wx{obj = Q1_Node_List, event = #wxCommand{type = command_listbox_s
       NewSrc = wxListBox:getStringSelection(Q1_Node_List),
       PidString = queueKeyToPid(NewSrc,0),
       [{_,Pid}] = ets:lookup(?pidStringEts,PidString),
-      [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = ets:lookup(?locationEts,Pid),
-      ets:insert(?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},src}}),
+      [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
+      gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},src}}}),
       NewMsgState = srcSelected,
       NewState = State#state{src = Pid,msgState = NewMsgState},
       SrcText = "Source: " ++ NewSrc,
@@ -174,8 +146,8 @@ handle_event(#wx{obj = Q1_Node_List, event = #wxCommand{type = command_listbox_s
           case maps:is_key(NewDst,DstMap) of
             false ->
               NewDstMap = maps:put(NewDst,Pid,DstMap),
-              [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = ets:lookup(?locationEts,Pid),
-              ets:insert(?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},destination}}),
+              [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
+              gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},destination}}}),
               wxListBox:append(DestinationComboBox,NewDst),
               NewState = State#state{destinations = NewDstMap},
               io:format("Destinations Map : ~p~n",[NewDstMap]),
@@ -193,8 +165,8 @@ handle_event(#wx{obj = Q2_Node_List, event = #wxCommand{type = command_listbox_s
       NewSrc = wxListBox:getStringSelection(Q2_Node_List),
       PidString = queueKeyToPid(NewSrc,0),
       [{_,Pid}] = ets:lookup(?pidStringEts,PidString),
-      [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = ets:lookup(?locationEts,Pid),
-      ets:insert(?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},src}}),
+      [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
+      gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},src}}}),
       NewMsgState = srcSelected,
       SrcText = "Source: " ++ NewSrc,
       wxTextCtrl:changeValue(SrcTextBox,SrcText),
@@ -218,8 +190,8 @@ handle_event(#wx{obj = Q2_Node_List, event = #wxCommand{type = command_listbox_s
           case maps:is_key(NewDst,DstMap) of
             false ->
               NewDstMap = maps:put(NewDst,Pid,DstMap),
-              [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = ets:lookup(?locationEts,Pid),
-              ets:insert(?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},destination}}),
+              [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
+              gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},destination}}}),
               wxListBox:append(DestinationComboBox,NewDst),
               NewState = State#state{destinations = NewDstMap},
               io:format("Destinations Map : ~p~n",[NewDstMap]),
@@ -237,8 +209,8 @@ handle_event(#wx{obj = Q3_Node_List, event = #wxCommand{type = command_listbox_s
       NewSrc = wxListBox:getStringSelection(Q3_Node_List),
       PidString = queueKeyToPid(NewSrc,0),
       [{_,Pid}] = ets:lookup(?pidStringEts,PidString),
-      [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = ets:lookup(?locationEts,Pid),
-      ets:insert(?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},src}}),
+      [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
+      gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},src}}}),
       NewMsgState = srcSelected,
       SrcText = "Source: " ++ NewSrc,
       wxTextCtrl:changeValue(SrcTextBox,SrcText),
@@ -262,8 +234,8 @@ handle_event(#wx{obj = Q3_Node_List, event = #wxCommand{type = command_listbox_s
           case maps:is_key(NewDst,DstMap) of
             false ->
               NewDstMap = maps:put(NewDst,Pid,DstMap),
-              [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = ets:lookup(?locationEts,Pid),
-              ets:insert(?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},destination}}),
+              [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
+              gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},destination}}}),
               wxListBox:append(DestinationComboBox,NewDst),
               NewState = State#state{destinations = NewDstMap},
               io:format("Destinations Map : ~p~n",[NewDstMap]),
@@ -281,8 +253,8 @@ handle_event(#wx{obj = Q4_Node_List, event = #wxCommand{type = command_listbox_s
       NewSrc = wxListBox:getStringSelection(Q4_Node_List),
       PidString = queueKeyToPid(NewSrc,0),
       [{_,Pid}] = ets:lookup(?pidStringEts,PidString),
-      [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = ets:lookup(?locationEts,Pid),
-      ets:insert(?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},src}}),
+      [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
+      gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},src}}}),
       NewMsgState = srcSelected,
       SrcText = "Source: " ++ NewSrc,
       wxTextCtrl:changeValue(SrcTextBox,SrcText),
@@ -306,8 +278,8 @@ handle_event(#wx{obj = Q4_Node_List, event = #wxCommand{type = command_listbox_s
           case maps:is_key(NewDst,DstMap) of
             false ->
               NewDstMap = maps:put(NewDst,Pid,DstMap),
-              [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = ets:lookup(?locationEts,Pid),
-              ets:insert(?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},destination}}),
+              [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
+              gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},destination}}}),
               wxListBox:append(DestinationComboBox,NewDst),
               NewState = State#state{destinations = NewDstMap},
               io:format("Destinations Map : ~p~n",[NewDstMap]),
@@ -347,8 +319,8 @@ handle_event(#wx{obj = RemoveDst, event = #wxCommand{type = command_button_click
   NodeToRemove = wxListBox:getStringSelection(DestinationComboBox),
   PidString = queueKeyToPid(NodeToRemove,0),
   [{_,Pid}] = ets:lookup(?pidStringEts,PidString),
-  [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = ets:lookup(?locationEts,Pid),
-  ets:insert(?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},normal}}),
+  [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
+  gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},normal}}}),
   NewDestinations = maps:remove(NodeToRemove,Destinations),
   removeNodeFromListBox(NodeToRemove,DestinationComboBox),
   case wxListBox:isEmpty(DestinationComboBox) of
@@ -363,14 +335,15 @@ handle_event(#wx{obj = RemoveSrc, event = #wxCommand{type = command_button_click
     State = #state{frame = _Frame,removeSrcBtn = RemoveSrc,srcTextBox = SrcTextBox,
       destinationCombobox = DestinationComboBox,removeDstBtn = RemoveDst,src = SrcPid,panel = Panel}) ->
   wxWindow:refresh(Panel),
-  [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = ets:lookup(?locationEts,SrcPid),
-  ets:insert(?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},normal}}),
+  [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,SrcPid}),
+  gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},normal}}}),
   wxTextCtrl:changeValue(SrcTextBox,"Source : null"),
   %wxStaticText:setLabel(SrcTextBox,"Source: null"),
-  PidList = ets:tab2list(?locationEts),
+  PidList = gen_server:call({global,?etsServer},{getAll,?locationEts}),
   io:format("ets table: ~p~n",[PidList]),
-  lists:foreach(fun({Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_}}) ->
-    ets:insert(?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},normal}}) end,PidList),
+  NewPidList = [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},normal}} || {Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},State}} <- PidList],
+%% todo: check if inserting multiple elements is done correctly
+  gen_server:cast({global,?etsServer},{insert,?locationEts,NewPidList}),
   io:format("remove src event Text value = ~p~n",[wxTextCtrl:getValue(SrcTextBox)]),
   resetQueue(DestinationComboBox,wxListBox:isEmpty(DestinationComboBox)),
   wxButton:disable(RemoveSrc),
@@ -437,9 +410,10 @@ handle_cast({messageSent,MsgId,Pathlist}, State = #state{destinationCombobox = D
   Path = makePath(Pathlist),
   io:format("msgRecieved: MsgId = ~p , Path = ~p~n",[MsgId,Path]),
   ets:insert(?pathEts,{MsgId,Path}),
-  PidList = ets:tab2list(?locationEts),
-  lists:foreach(fun({Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_}}) ->
-    ets:insert(?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},normal}}) end,PidList),
+  PidList = gen_server:call({global,?etsServer},{getAll,?locationEts}),
+  NewPidList = [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},normal}} || {Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},State}} <- PidList],
+%% todo: check if inserting multiple elements is done correctly
+  gen_server:cast({global,?etsServer},{insert,?locationEts,NewPidList}),
   resetQueue(DestinationQeueu,wxListBox:isEmpty(DestinationQeueu)),
   wxTextCtrl:changeValue(SrcTextBox,"Source : null"),
   NewState = State#state{msgState = notStarted,src = nullptr},
@@ -474,7 +448,7 @@ code_change(_, _, State) ->
   {stop, ignore, State}.
 
 terminate(_Reason, _) ->
-  whereis(?APP_MAIN_PID)!{gfxTerminate,self(),_Reason},
+  whereis(?APP_SERVER)!{gfxTerminate,self(),_Reason},
   io:format("entered terminate ~n"),
   wx:destroy(),
   ok.
@@ -688,13 +662,13 @@ create(RootOrNode, State = #state{debug = Debug,numOfRoots = NumOfRoots,numOfNod
                root ->
                  {Pid,Ref} = gen_server:call(rplServer, {addNode, root}),
                  ets:insert(?nodePidsEts,{nodePid,Pid}),
-                 ets:insert(?locationEts,{Pid,{Ref,NumOfRoots,RootOrNode,Func,Type,?incerement,{Debug,350},normal}}),
-                 ets:insert(?ROOT_LIST, {Pid, {Ref,Debug,350}}),
+                 gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{Ref,NumOfRoots,RootOrNode,Func,Type,?incerement,{Debug,350},normal}}}),
+                 gen_server:cast({global,?etsServer},{insert,?ROOT_LIST,{Pid, {Ref,Debug,350}}}),
                  State#state{numOfRoots = NumOfRoots + 1,debug = Debug + 50};
                node ->
                  {Pid1,Ref1} = gen_server:call(rplServer, {addNode, node}),
                  ets:insert(?nodePidsEts,{nodePid,Pid1}),
-                 ets:insert(?locationEts,{Pid1,{Ref1,NumOfRoots,RootOrNode,Func,Type,?incerement,{Debug,400},normal}}),
+                 gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid1,{Ref1,NumOfRoots,RootOrNode,Func,Type,?incerement,{Debug,350},normal}}}),
                  State#state{numOfNodes = NumOfNodes + 1,debug = Debug + 50}
              end,
   if
@@ -718,11 +692,12 @@ getStartingPos(Func,Type,X,_RootOrNode, _State) ->
 
 draw(State = #state{panel = Panel,node_list_q_1 = Q1,node_list_q_2 = Q2,
   node_list_q_3 = Q3,node_list_q_4 = Q4}) ->
+  LocationList = gen_server:call({global,?etsServer},{getAll,?locationEts}),
   PidList = ets:lookup(?nodePidsEts,nodePid),
   eraseAllOldLocs(Panel),
   drawGrid(Panel),
   resetQueus(Q1,Q2,Q3,Q4),
-  {Nq1,Nq2,Nq3,Nq4} = update(Panel,PidList,Q1,Q2,Q3,Q4),
+  {Nq1,Nq2,Nq3,Nq4} = update(Panel,LocationList,Q1,Q2,Q3,Q4),
   drawPaths(Panel),
   LocUpdateState = State#state{node_list_q_1 = Nq1,node_list_q_2 = Nq2,node_list_q_3 = Nq3,node_list_q_4 = Nq4},
   NewState =  updateQueues(LocUpdateState),
@@ -744,41 +719,58 @@ removeKeys(Keylist,PathMap) ->
 
 drawPath([],_Panel) -> ok;
 drawPath([H|[]],Panel) ->
-  [{_,{_,_,_,_,_,_,{Xs,Ys},_}}] = ets:lookup(?locationEts,erlang:element(1,hd(H))),
-  [{_,{_,_,_,_,_,_,{Xd,Yd},_}}] = ets:lookup(?locationEts,erlang:element(2,hd(H))),
+  [{_,{_,_,_,_,_,_,{Xs,Ys},_}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,erlang:element(1,hd(H))}),
+  [{_,{_,_,_,_,_,_,{Xd,Yd},_}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,erlang:element(2,hd(H))}),
   Paint = wxClientDC:new(Panel),
   Brush = wxBrush:new(?wxRED),
   wxClientDC:setBrush(Paint,Brush),
   wxClientDC:drawLine(Paint,{Xs,Ys},{Xd,Yd}),
   wxClientDC:destroy(Paint);
 drawPath(PathList,Panel) when not(is_tuple(PathList)) ->
-  [{_,{_,_,_,_,_,_,{Xs,Ys},_}}] = ets:lookup(?locationEts,erlang:element(1,hd(PathList))),
-  [{_,{_,_,_,_,_,_,{Xd,Yd},_}}] = ets:lookup(?locationEts,erlang:element(2,hd(PathList))),
+  [{_,{_,_,_,_,_,_,{Xs,Ys},_}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,erlang:element(1,hd(PathList))}),
+  [{_,{_,_,_,_,_,_,{Xd,Yd},_}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,erlang:element(2,hd(PathList))}),
   Paint = wxClientDC:new(Panel),
   Brush = wxBrush:new(?wxRED),
   wxClientDC:setBrush(Paint,Brush),
   wxClientDC:drawLine(Paint,{Xs,Ys},{Xd,Yd}),
   wxClientDC:destroy(Paint),
   drawPath(tl(PathList),Panel);
-
 drawPath(PathList,Panel) when is_tuple(PathList) ->
-  [{_,{_,_,_,_,_,_,{Xs,Ys},_}}] = ets:lookup(?locationEts,erlang:element(1,PathList)),
-  [{_,{_,_,_,_,_,_,{Xd,Yd},_}}] = ets:lookup(?locationEts,erlang:element(2,PathList)),
+  [{_,{_,_,_,_,_,_,{Xs,Ys},_}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,erlang:element(1,hd(PathList))}),
+  [{_,{_,_,_,_,_,_,{Xd,Yd},_}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,erlang:element(2,hd(PathList))}),
+
   Paint = wxClientDC:new(Panel),
   Brush = wxBrush:new(?wxRED),
   wxClientDC:setBrush(Paint,Brush),
   wxClientDC:drawLine(Paint,{Xs,Ys},{Xd,Yd}),
   wxClientDC:destroy(Paint).
 
+update(Panel,[{Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y},MsgRole}}|[]],Q1,Q2,Q3,Q4) ->
+  %[{Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y},MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
+  {NewX,NewY} = updateLocation({Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y},MsgRole}}),
+  {Nq1,Nq2,Nq3,Nq4} = insertToQueues(Pid,{X,Y},NodeType,Q1,Q2,Q3,Q4),
+  drawNode({NewX,NewY},NodeType,MsgRole,Panel),
+  %drawNode({NewX,NewY},NodeType,MsgRole,Panel),
+  {Nq1,Nq2,Nq3,Nq4};
+update(Panel,[{Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y},MsgRole}}|T],Q1,Q2,Q3,Q4) ->
+  %[{Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y},MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
+  {NewX,NewY} = updateLocation({Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y},MsgRole}}),
+  {Nq1,Nq2,Nq3,Nq4} = insertToQueues(Pid,{X,Y},NodeType,Q1,Q2,Q3,Q4),
+  drawNode({NewX,NewY},NodeType,MsgRole,Panel),
+  %drawNode({NewX,NewY},NodeType,MsgRole,Panel),
+  update(Panel,T,Nq1,Nq2,Nq3,Nq4);
+
+
+
 update(Panel,[{nodePid,Pid}|[]],Q1,Q2,Q3,Q4) ->
-  [{Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y},MsgRole}}] = ets:lookup(?locationEts,Pid),
+  [{Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y},MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
   {NewX,NewY} = updateLocation({Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y},MsgRole}}),
   {Nq1,Nq2,Nq3,Nq4} = insertToQueues(Pid,{X,Y},NodeType,Q1,Q2,Q3,Q4),
   drawNode({NewX,NewY},NodeType,MsgRole,Panel),
   %drawNode({NewX,NewY},NodeType,MsgRole,Panel),
   {Nq1,Nq2,Nq3,Nq4};
 update(Panel,[{nodePid,Pid}|T],Q1,Q2,Q3,Q4) ->
-  [{Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y},MsgRole}}] = ets:lookup(?locationEts,Pid),
+  [{Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y},MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
   {NewX,NewY} = updateLocation({Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y},MsgRole}}),
   {Nq1,Nq2,Nq3,Nq4} = insertToQueues(Pid,{X,Y},NodeType,Q1,Q2,Q3,Q4),
   drawNode({NewX,NewY},NodeType,MsgRole,Panel),
@@ -791,7 +783,7 @@ updateLocation({Pid,{Ref,NumOfRoots,_NodeType,Func,MovementType,Direction,{X,Y},
                                polynomial -> getPolynomialCoordinates(Func,Direction,X);
                                sinusoidal -> getSinusoidalCoordinates(Func,Direction,X)
                              end,
-  ets:insert(?locationEts,{Pid,{Ref,NumOfRoots,_NodeType,Func,MovementType,NewDirection,{NewX,NewY},MsgRole}}),
+  gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{Ref,NumOfRoots,_NodeType,Func,MovementType,NewDirection,{NewX,NewY},MsgRole}}}),
   {NewX,NewY}.
 
 drawGrid(Panel) ->
@@ -815,7 +807,6 @@ resetQueus(Q1,Q2,Q3,Q4) ->
   resetQueue(Q4,wxListBox:isEmpty(Q4)).
 
 updateQueues(State = #state{node_list_q_4 = Q4,node_list_q_3 = Q3,node_list_q_2 = Q2,node_list_q_1 = Q1,nq1 = Nq1,nq2 = Nq2,nq3 = Nq3,nq4 = Nq4}) ->
-  %{NewQ1,NewQ2,NewQ3,NewQ4} = insertToQueues(ets:lookup(?nodePidsEts,nodePid),Q1,Q2,Q3,Q4),
   wxStaticText:setLabel(Nq1,integer_to_string(wxListBox:getCount(Q1))),
   wxStaticText:setLabel(Nq2,integer_to_string(wxListBox:getCount(Q2))),
   wxStaticText:setLabel(Nq3,integer_to_string(wxListBox:getCount(Q3))),
@@ -936,7 +927,7 @@ eraseNodes(Panel) ->
 
 %updateCoordinates({Pid,{Ref,NumOfRoots,_DontCare,Func,MovementType,Direction,{X,Y}}}) ->
 updateCoordinates({nodePid,Pid}) ->
-  [{Pid,{Ref,NumOfRoots,RootOrNode,Func,MovementType,Direction,{X,Y},_MsgRole}}] = ets:lookup(?locationEts,Pid),
+  [{Pid,{Ref,NumOfRoots,RootOrNode,Func,MovementType,Direction,{X,Y},_MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
   {NewX,NewY,NewDirection} = case MovementType of
                                random -> getRandomCoordinates(X,Y);
                                polynomial -> getPolynomialCoordinates(Func,Direction,X);
@@ -944,12 +935,10 @@ updateCoordinates({nodePid,Pid}) ->
                              end,
   if
     RootOrNode == root ->
-      ets:insert(?locationEts,{Pid,{Ref,NumOfRoots,RootOrNode,Func,MovementType,NewDirection,{NewX,NewY}}}),
-      ets:insert(?ROOT_LIST,{Pid,{Ref,NewX,NewY}});
-    true ->  ets:insert(?locationEts,{Pid,{Ref,NumOfRoots,RootOrNode,Func,MovementType,NewDirection,{NewX,NewY}}})
+      gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{Ref,NumOfRoots,RootOrNode,Func,MovementType,NewDirection,{NewX,NewY}}}}),
+      gen_server:cast({global,?etsServer},{insert,?ROOT_LIST,{Pid,{Ref,NewX,NewY}}});
+    true -> gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{Ref,NumOfRoots,RootOrNode,Func,MovementType,NewDirection,{NewX,NewY}}}})
   end.
-%NewLocationsMap = maps:update(Pid,{Ref,NumOfRoots,_DontCare,Func,MovementType,NewDirection,{NewX,NewY}},LocationMap),
-%NewLocationsMap.
 
 getRandomCoordinates(X,Y) ->
   %io:format("before random coordinates ~n"),

@@ -27,11 +27,26 @@
 -define(NODE_2,node2).
 -define(NODE_3,node3).
 -define(NODE_4,node4).
-
+-define(etsServer,etsServer).
 -define(locationEts,nodeList).
 -define(nodePidsEts,nodePidsEts).
 -define(pidStringEts,pidStringEts).
 -define(pathEts,pathEts).
+-define(MapSize, 750).
+-define(GridMapSize,?MapSize div 2).
+-define(MyServer,?MODULE).
+-define(wxPurple,{16#73,16#26,16#4D,16#FF}).
+-define(wxDarkGreen,{16#1F,16#60,16#40,16#FF}).
+-define(wxYellow,{16#FF,16#FF,16#4D,16#FF}).
+-define(wxOrange,{16#FF,16#99,16#00,16#FF}).
+-define(wxDarkCyan,{16#00,16#99,16#99,16#FF}).
+-define(wxSheikBlue,{16#F1,16#F9,16#FB,16#FF}).
+-define(RandMovement,5).
+-define(polynomDelta,1).
+-define(sinDelta,2).
+-define(incerement,1).
+-define(decrement,-1).
+-define(radius,(?MapSize div 10)).
 
 -record(daoAckMsg, {rplInstanceId, d = 2#1, reserved = 2#0000000, daoSequence, status = 16#01, dodagId, updateType}).
 -record(daoMsg, {rplInstanceId, k = 2#1, d = 2#1, flags = 8#00, reserved = 16#00, daoSequence, dodagId, updateType}).
@@ -39,3 +54,8 @@
 -record(messageFormat, {msgId, from, to, msg}).
 -record(msg_table_key, {dodagId, from, to}).
 -record(rplServerData, {nodeCount, rootCount, randomLocationList, msg_id, messageList, mop}).
+-record(state,{appState,newRootBtn,movementList,nodeTypetoCreate,newNodeBtn,sendMsg,moveType,quit,
+  node_list_q_1,node_list_q_2,node_list_q_3,node_list_q_4,nq1,nq2,nq3,nq4,panel,size,frame,
+  protocolServer,msgTextBox,mode,node,id,locationMap,msg,numOfNodes,numOfRoots,tableID,msgState,
+  src,destinations,srcTextBox,destinationCombobox,startBtn,storing_checkbox,nonStoring_checkbox,
+  removeSrcBtn,removeDstBtn,msgID,pathList,debug,createdFirst}).
