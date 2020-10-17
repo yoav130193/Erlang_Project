@@ -13,8 +13,9 @@
 %% API
 -export([start_link/0]).
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
-  code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,code_change/3]).
+-include_lib("wx/include/wx.hrl").
+-include_lib("xmerl/include/xmerl.hrl").
 %%-define(SERVER, ?MODULE).
 -record(etsState, {started}).
 
@@ -26,7 +27,8 @@
 -spec(start_link() ->
   {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
 start_link() ->
-  gen_server:start_link({global, ?MODULE}, ?MODULE, [], []).
+  io:format("ets server start link~n"),
+  gen_server:start_link({global, ?MODULE}, ?MODULE, [local,node()], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -47,11 +49,11 @@ start_link() ->
   {ok, State :: #etsState{}} | {ok, State :: #etsState{}, timeout() | hibernate} |
   {stop, Reason :: term()} | ignore).
 
-init([]) ->
-  ets:new(?locationEts, [set, named_table, public,{read_concurrency, true},{heir,global:whereis_name(?APP_SERVER), {gfxCrash,?locationEts}}]),
-  ets:new(?nodePidsEts, [bag, named_table, public,{heir, global:whereis_name(?APP_SERVER), {gfxCrash,?nodePidsEts}}]),
-  ets:new(?pidStringEts,[set, named_table, public,{heir, global:whereis_name(?APP_SERVER), {gfxCrash,?pidStringEts}}]),
-  ets:new(?pidStringEts,[set, named_table, public,{heir, global:whereis_name(?APP_SERVER), {gfxCrash,?pidStringEts}}]),
+init([_Mode,_Node]) ->
+  io:format("start ets init~n"),
+  ets:new(?locationEts, [set, named_table, public,{read_concurrency, true}]),
+  ets:new(?nodePidsEts, [bag, named_table, public]),
+  ets:new(?pidStringEts,[set, named_table, public]),
   ets:new(?ROOT_LIST, [set, named_table, public]),
   ets:new(?MSG_TABLE, [set, named_table, public]),
   ets:new(?RPL_REF, [set, named_table, public]),
@@ -164,3 +166,9 @@ terminate(Reason, _State) ->
 
 code_change(_OldVsn, State, _Extra) ->
   {ok, State}.
+
+
+
+
+
+

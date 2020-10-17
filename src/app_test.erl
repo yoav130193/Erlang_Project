@@ -1,0 +1,227 @@
+%%%-------------------------------------------------------------------
+%%% @author adar
+%%% @copyright (C) 2019, <COMPANY>
+%%% @doc
+%%%
+%%% @end
+%%% Created : 05. Aug 2019 12:47 PM
+%%%-------------------------------------------------------------------
+-module(app_test).
+-author("adar").
+-include("include/header.hrl").
+-include_lib("xmerl/include/xmerl.hrl").
+-behaviour(gen_server).
+
+%% API
+-export([start/1, start/0, isAlive/0, req_connect_nodes/0, req_start_app/0, startAndConnect/1,makeNodeMap/1,parseXML/0,lta/1]).
+
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+
+-define(mySERVER, ?MODULE).
+
+-record(appstate, {nodesList, activeNodes, gfx,etsServer, rplserver, name}).
+
+
+
+%%%===================================================================
+%%% API
+%%%===================================================================
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Starts the server
+%%
+%% @end
+%%--------------------------------------------------------------------
+
+start(Name) ->
+  gen_server:start_link({global, ?MODULE}, ?MODULE, Name, []).
+
+start() ->
+  gen_server:start_link({local, ?MODULE}, ?MODULE, ?MODULE, []).
+
+%%%===================================================================
+%%% gen_server callbacks
+%%%===================================================================
+
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% Initializes the server
+%%
+%% @spec init(Args) -> {ok, State} |
+%%                     {ok, State, Timeout} |
+%%                     ignore |
+%%                     {stop, Reason}
+%% @end
+%%--------------------------------------------------------------------
+-spec(init(Args :: term()) ->
+  {ok, State :: #appstate{}} | {ok, State :: #appstate{}, timeout() | hibernate} |
+  {stop, Reason :: term()} | ignore).
+
+init(Name) ->
+  NodeList = parseXML(),
+  State = #appstate{activeNodes = [],nodesList = NodeList,gfx = false,rplserver = false,name = Name},
+  ets:new(?appEts, [set, named_table, public]),
+  io:format("app finished init~n"),
+  {ok, State}.
+
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% Handling call messages
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec(handle_call(Request :: term(), From :: {pid(), Tag :: term()},
+    State :: #appstate{}) ->
+  {reply, Reply :: term(), NewState :: #appstate{}} |
+  {reply, Reply :: term(), NewState :: #appstate{}, timeout() | hibernate} |
+  {noreply, NewState :: #appstate{}} |
+  {noreply, NewState :: #appstate{}, timeout() | hibernate} |
+  {stop, Reason :: term(), Reply :: term(), NewState :: #appstate{}} |
+  {stop, Reason :: term(), NewState :: #appstate{}}).
+
+handle_call(isalive,_From, State) ->
+  {reply, alive, State};
+
+%% connect nodes to the application
+
+handle_call(connectNodes,_From, State=#appstate{nodesList = NodeList}) ->
+  makeNodeMap(NodeList),
+  NewState = case connectNodes(State,NodeList) of
+               {egg,_} -> State#appstate{activeNodes = []};
+               {ok,ActiveNodes} ->
+                  State#appstate{activeNodes = ActiveNodes}
+             end,
+  {reply, ok, NewState};
+
+%% starting the graphics and request empty playground from the first node in queue-global
+
+handle_call(start_app,_From, State = #appstate{nodesList = [H|T]}) ->
+  etsServer:start_link(),
+  [{_NodeNameS,NodeNameA}] = ets:lookup(?appEts,H),
+  gfx_server:start_global(NodeNameA),
+  io:format("starts in global mode ~n"),
+  {reply,ok, State#appstate{gfx = true,etsServer = true}};
+
+handle_call(_Request, _From, State) ->
+  {reply, ok, State}.
+
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% Handling cast messages
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec(handle_cast(Request :: term(), State :: #appstate{}) ->
+  {noreply, NewState :: #appstate{}} |
+  {noreply, NewState :: #appstate{}, timeout() | hibernate} |
+  {stop, Reason :: term(), NewState :: #appstate{}}).
+
+
+
+handle_cast(_Request, State) ->
+  {noreply, State}.
+
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% Handling all non call/cast messages
+%%
+%% @spec handle_info(Info, State) -> {noreply, State} |
+%%                                   {noreply, State, Timeout} |
+%%                                   {stop, Reason, State}
+%% @end
+%%--------------------------------------------------------------------
+-spec(handle_info(Info :: timeout() | term(), State :: #appstate{}) ->
+  {noreply, NewState :: #appstate{}} |
+  {noreply, NewState :: #appstate{}, timeout() | hibernate} |
+  {stop, Reason :: term(), NewState :: #appstate{}}).
+handle_info(_Info, State) ->
+  {noreply, State}.
+
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% This function is called by a gen_server when it is about to
+%% terminate. It should be the opposite of Module:init/1 and do any
+%% necessary cleaning up. When it returns, the gen_server terminates
+%% with Reason. The return value is ignored.
+%%
+%% @spec terminate(Reason, State) -> void()
+%% @end
+%%--------------------------------------------------------------------
+-spec(terminate(Reason :: (normal | shutdown | {shutdown, term()} | term()),
+    State :: #appstate{}) -> term()).
+terminate(_Reason, _State) ->
+  ok.
+
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% Convert process state when code is changed
+%%
+%% @spec code_change(OldVsn, State, Extra) -> {ok, NewState}
+%% @end
+%%--------------------------------------------------------------------
+-spec(code_change(OldVsn :: term() | {down, term()}, State :: #appstate{},
+    Extra :: term()) ->
+  {ok, NewState :: #appstate{}} | {error, Reason :: term()}).
+code_change(_OldVsn, State, _Extra) ->
+  {ok, State}.
+
+%%%===================================================================
+%%% Internal functions
+%%%===================================================================
+
+%%connect list of nodes
+connectNodes(State=#appstate{},[H|T]) ->
+  io:format("~p~n",[ets:lookup(?appEts,H)]),
+  io:format("~p~n",[H]),
+  [{_String,Atom}] = ets:lookup(?appEts,H),
+  Res = case net_kernel:connect_node(Atom) of
+           true -> true ;
+          false -> false;
+          _ -> undefined
+        end,
+  io:format("Res = ~p~n",[Res]),
+  connectNodes(State,Res,H,T).
+
+connectNodes(State=#appstate{activeNodes = ActiveNodes},true,H,[]) -> {ok,State#appstate{activeNodes = ActiveNodes ++ H}};
+connectNodes(State=#appstate{},false,_H,[]) -> {ok,State};
+connectNodes(State=#appstate{},false,H,T) ->
+  io:format("Can't Connect to Node ~p~n",[H]),
+  [{_String,Atom}] = ets:lookup(?appEts,H),
+  connectNodes(State,net_kernel:connect_node(Atom),hd(T),tl(T));
+connectNodes(State=#appstate{activeNodes = ActiveNodes},true,H,T) ->
+  io:format("arraived at true with list~n"),
+  [{_String,Atom}] = ets:lookup(?appEts,hd(T)),
+  connectNodes(State#appstate{activeNodes = ActiveNodes ++ H},net_kernel:connect_node(Atom),hd(T),tl(T)).
+
+isAlive() -> gen_server:call({global,node()},isalive).
+
+%% connects given list of nodes names
+
+req_connect_nodes() -> gen_server:call({global,node()},connectNodes).
+
+%%opens control and graphics in the requested node
+
+req_start_app() -> gen_server:call({global,node()},start_app).
+
+startAndConnect(Name) -> start(Name).
+
+parseXML() ->
+  {Xml,_} = xmerl_scan:file("erlangConfig.xml",[{validation,true}]),
+  Content = Xml#xmlElement.content,
+  MetaRec = [Data || {_,_,_,_,_,_,_,_,Data,_,_,_} <- Content],
+  [NodeName || [{_,_,_,_,NodeName,_}] <- MetaRec].
+
+makeNodeMap([H|[]]) -> ets:insert(?appEts,{H,list_to_atom(H)});
+makeNodeMap(ActiveNodes) ->
+  ets:insert(?appEts,{hd(ActiveNodes),list_to_atom(hd(ActiveNodes))}),
+  makeNodeMap(tl(ActiveNodes)).
+
+lta(List) -> list_to_atom(List).

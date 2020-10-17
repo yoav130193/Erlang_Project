@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8" ?>
+        <!ELEMENT Nodes (M_Node,G_Node,R_Node,N_Node)+ >
+        <!ELEMENT M_Node       (#PCDATA) >
+        <!ELEMENT G_Node       (#PCDATA) >
+        <!ELEMENT R_Node       (#PCDATA) >
+        <!ELEMENT N_Node       (#PCDATA) >

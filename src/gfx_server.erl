@@ -26,7 +26,7 @@
 
 
 start_global(Node) ->
-  wx_object:start_link({local,?MyServer},?MODULE,[global,Node],[]).
+  wx_object:start_link({global,?MyServer},?MODULE,[local,Node],[]).
 
 start(Node) ->
   wx_object:start_link({local,?MyServer},?MODULE,[local,Node],[]).
