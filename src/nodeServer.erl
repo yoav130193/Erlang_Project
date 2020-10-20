@@ -16,7 +16,7 @@
 
 
 start_link({NodeCount, Mop}) ->
-  gen_server:start_monitor({local, list_to_atom("node_server" ++ integer_to_list(NodeCount))}, ?NODE_SERVER, [{NodeCount, Mop}], []).
+  gen_server:start_monitor({global, list_to_atom("node_server" ++ integer_to_list(NodeCount))}, ?NODE_SERVER, [{NodeCount, Mop}], []).
 
 init([{NodeCount, Mop}]) ->
   io:format("new node: ~p :)~n", [self()]),
@@ -67,14 +67,14 @@ handle_cast({downwardMessage, From, To, Msg, DodagID, PathList, WholePath}, Stat
 
 
 handle_call({sendMessageStoring, From, To, Msg}, OrderFrom, {NodeCount, Mop}) ->
-  ets:insert(?RPL_REF, {ref, OrderFrom}),
+  gen_server:call({global,?etsServer},{insert,?RPL_REF,{ref, OrderFrom}}),
   io:format("OrderFrom: ~p~n", [OrderFrom]),
   utils:sendMessageStoring(From, To, Msg, Mop),
   {noreply, {NodeCount, Mop}};
 
 
 handle_call({sendMessageNonStoring, From, To, Msg}, OrderFrom, {NodeCount, Mop}) ->
-  ets:insert(?RPL_REF, {ref, OrderFrom}),
+  gen_server:call({global,?etsServer},{insert,?RPL_REF,{ref, OrderFrom}}),
   io:format("OrderFrom: ~p~n", [OrderFrom]),
   utils:sendMessageNonStoring(From, To, Msg, Mop),
   {noreply, {NodeCount, Mop}};
@@ -85,6 +85,6 @@ handle_call(Request, From, State) ->
 
 terminate(Reason, State) ->
   io:format("nodeServer: ~p, terminate , Reason: ~p, State: ~p~n", [self(), Reason, State]),
-  ets:delete(?NODE_LIST, self()),
+  gen_server:call({global,?etsServer},{delete,?NODE_LIST,self()}),
   script:checkLists(),
   exit({nodeCrash, Reason, State}).

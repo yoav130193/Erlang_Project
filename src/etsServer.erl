@@ -60,6 +60,8 @@ init([_Mode,_Node]) ->
   ets:new(?DOWNWARD_DIGRAPH, [set, named_table, public]),
   io:format("Finished ETS server init ~n"),
   NewState = #etsState{started = true},
+  %gfx_server:start_global('g_node@amirs-Macbook-Pro'),
+  %rpc:call('g_node@amirs-Macbook-Pro',gfx_server,gfx_server:start_global,['g_node@amirs-Macbook-Pro']),
   {ok, NewState}.
 
 %%--------------------------------------------------------------------
@@ -82,9 +84,25 @@ handle_call({lookup,TableName,Key}, _From, State = #etsState{}) ->
   Reply = ets:lookup(TableName,Key),
   {reply, Reply, State};
 
+handle_call({whereis,TableName}, _From, State = #etsState{}) ->
+  Reply = ets:whereis(TableName),
+  {reply, Reply, State};
+
 handle_call({getAll,TableName}, _From, State = #etsState{}) ->
   Reply = ets:tab2list(TableName),
   {reply, Reply, State};
+
+handle_call({delete,TableName,Key},_From,State = #etsState{}) ->
+  ets:delete(TableName,Key),
+  {reply, ok, State};
+
+handle_call({deleteAll,TableName},_From,State = #etsState{}) ->
+  ets:delete_all_objects(TableName),
+  {reply, ok, State};
+
+handle_call({insert,TableName,{Key,Value}},_From,State = #etsState{}) ->
+  ets:insert(TableName,{Key,Value}),
+  {reply, ok, State};
 
 handle_call(_Request, _From, State = #etsState{}) ->
 {reply, ok, State}.

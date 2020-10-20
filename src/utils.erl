@@ -14,16 +14,17 @@
 %% API
 -export([findMeAndNeighbors/1, handleDownwardMessage/6, findNeighbors/2,
   checkIfUpdateNeeded/4, requestParent/3, buildVertexDigraph/1, sendMessageNonStoring/4,
-  sendMessageStoring/4, deleteMessageFromEts/5, getDodagList/0, calculatePath/3, startSendMessageDownward/6]).
+  sendMessageStoring/4, deleteMessageFromEts/5, getDodagList/0, calculatePath/3, startSendMessageDownward/6,
+  checkNode/1]).
 
 
 %**************   FIND FRIENDS   **************%
 
 % Find Me and My Friends
 findMeAndNeighbors(Me) ->
-  MyNode = hd(ets:lookup(nodeList, Me)),
-  Y = ets:tab2list(nodeList),
-  io:format("utils ETS table: ~p~n",[Y]),
+  MyNode = hd(gen_server:call({global,?etsServer},{lookup,?locationEts,Me})),
+  Y = gen_server:call({global,?etsServer},{getAll,?locationEts}),
+  %io:format("utils ETS table: ~p~n",[Y]),
   OtherNodeList = [X || X <- Y, element(1, X) =/= element(1, MyNode)],
   {MyNode, utils:findNeighbors(MyNode, OtherNodeList)}.
 
@@ -67,7 +68,8 @@ checkWithPrev(NewVersion, NewRank, PrevVersion, PrevRank, From, DodagId) ->
 
 requestParent(From, DodagId, NodeList) ->
   lists:foreach(fun(Element) ->
-    ets:insert(?MSG_TABLE, {#msg_table_key{dodagId = DodagId, from = self(), to = element(1, Element)}, {msg}}),
+    gen_server:call({global,?etsServer},{insert,?MSG_TABLE,{#msg_table_key{dodagId = DodagId, from = self(), to = element(1, Element)}, {msg}}}),
+    %ets:insert(?MSG_TABLE, {#msg_table_key{dodagId = DodagId, from = self(), to = element(1, Element)}, {msg}}),
     gen_server:cast(element(1, Element), {requestParent, From, DodagId})
                 end, NodeList).
 
@@ -91,7 +93,7 @@ sendMessageNonStoring(From, To, Msg, Mop) ->
       end;
     {error, Reason} ->
       io:format("NO ROUTE FROM:~p TO:~p~n", [From, To]),
-      gen_server:reply(element(2, hd(ets:lookup(?RPL_REF, ref))), [])
+      gen_server:reply(element(2, hd(gen_server:call({global,?etsServer},{lookup,?RPL_REF,ref}))),[])
   end.
 
 sendMessageStoring(From, To, Msg, Mop) ->
@@ -102,13 +104,13 @@ sendMessageStoring(From, To, Msg, Mop) ->
     % startSendDownward(From, To, Msg, MinDodagId, []);
     {error, Reason} ->
       io:format("NO ROUTE FROM:~p TO:~p~n", [From, To]),
-      gen_server:reply(element(2, hd(ets:lookup(?RPL_REF, ref))), [])
+      gen_server:reply(element(2, hd(gen_server:call({global,?etsServer},{lookup,?RPL_REF,ref}))),[])
   end.
 
 startSendMessageDownward(From, To, Msg, MinDodagId, PathToRoot, Mop) ->
   case hd(Mop) of
     ?NON_STORING -> PathList = digraph:get_short_path(get(?DOWNWARD_DIGRAPH), self(), To);
-    ?STORING -> PathList = digraph:get_short_path(element(2, hd(ets:lookup(?DOWNWARD_DIGRAPH, MinDodagId))), self(), To)
+    ?STORING -> PathList = digraph:get_short_path(element(2, hd(gen_server:call({global,?etsServer},{lookup,?DOWNWARD_DIGRAPH,MinDodagId}))), self(), To)
   end,
   io:format("Me: ~p, PathList: ~p, PathToRoot: ~p~n", [self(), PathList, PathToRoot]),
   gen_server:cast(hd(tl(PathList)), {downwardMessage, From, To, Msg, MinDodagId, tl(tl(PathList)), PathToRoot ++ [self()]}).
@@ -118,7 +120,7 @@ handleDownwardMessage(DodagID, Msg, From, To, TempWholePath, PathList) ->
   case To of
     MyPid ->
       io:format("Got the Msg!!! DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p TempPath: ~p~n", [DodagID, self(), Msg, From, To, TempWholePath ++ [self()]]),
-      gen_server:reply(element(2, hd(ets:lookup(?RPL_REF, ref))), TempWholePath ++ [self()]);
+      gen_server:reply(element(2, hd(gen_server:call({global,?etsServer},{lookup,?RPL_REF,ref}))), TempWholePath ++ [self()]);
     _ ->
       io:format("downwardMessage, DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p TempPath: ~p PathList: ~p~n", [DodagID, self(), Msg, From, To, TempWholePath,PathList]),
       gen_server:cast(hd(PathList), {downwardMessage, From, To, Msg, DodagID, tl(PathList), TempWholePath ++ [self()]})
@@ -199,7 +201,7 @@ calculatePath(To, Mop, DodagId) ->
   case hd(Mop) of
     ?NON_STORING -> DownwardDigraph = digraph:get_short_path(get(?DOWNWARD_DIGRAPH), self(), To);
     ?STORING ->
-      DownwardDigraph = digraph:get_short_path(element(2, hd(ets:lookup(?DOWNWARD_DIGRAPH, DodagId))), self(), To)
+      DownwardDigraph = digraph:get_short_path(element(2, hd(gen_server:call({global,?etsServer},{lookup,?DOWNWARD_DIGRAPH,DodagId}))), self(), To)
   end,
   case DownwardDigraph of
     false -> if
@@ -211,14 +213,19 @@ calculatePath(To, Mop, DodagId) ->
 
 
 deleteMessageFromEts(DodagId, From, To, Action, WhereFrom) ->
-  ets:delete(?MSG_TABLE, #msg_table_key{dodagId = DodagId, from = From, to = To}),
-  case ets:tab2list(?MSG_TABLE) of
+  gen_server:call({global,?etsServer},{delete,?MSG_TABLE,#msg_table_key{dodagId = DodagId, from = From, to = To}}),
+  case gen_server:call({global,?etsServer},{getAll,?MSG_TABLE}) of
     [] ->
       io:format("Dodag_id: ~p, Node: ~p, From: ~p, To: ~p, finish Building Action: ~p WhereFrom: ~p~n", [DodagId, self(), From, To, Action, WhereFrom]),
-      gen_server:cast(rplServer, Action);
-    List -> %io:format("not finished yet, list left: ~p~n", [List])
+      gen_server:cast({global,rplServer}, Action);
+    _List -> %io:format("not finished yet, list left: ~p~n", [List])
       continue
   end.
+
+checkNode(Node) ->
+  Nodes = nodes(),
+  [X || X <-lists:map(fun(E) -> E == Node end,Nodes) , X == true].
+
 
 
 

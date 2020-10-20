@@ -34,7 +34,6 @@
 -define(pathEts,pathEts).
 -define(MapSize, 750).
 -define(GridMapSize,?MapSize div 2).
--define(MyServer,?MODULE).
 -define(wxPurple,{16#73,16#26,16#4D,16#FF}).
 -define(wxDarkGreen,{16#1F,16#60,16#40,16#FF}).
 -define(wxYellow,{16#FF,16#FF,16#4D,16#FF}).
@@ -48,6 +47,9 @@
 -define(decrement,-1).
 -define(radius,(?MapSize div 10)).
 -define(appEts,appEts).
+-define(R_NODE,'r_node@amirs-MacBook-Pro').
+-defgine(G_NODE,'g_node@amirs-MacBook-Pro').
+-define(N_NODE,'n_node@amirs-MacBook-Pro').
 
 -record(daoAckMsg, {rplInstanceId, d = 2#1, reserved = 2#0000000, daoSequence, status = 16#01, dodagId, updateType}).
 -record(daoMsg, {rplInstanceId, k = 2#1, d = 2#1, flags = 8#00, reserved = 16#00, daoSequence, dodagId, updateType}).

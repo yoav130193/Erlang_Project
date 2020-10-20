@@ -63,5 +63,13 @@ script:startAllReal().
 script:startAll().
 
 
+m_node
+erl -sname m_node -setcookie hello
+app_test:startAndConnect(node()).
+gen_server:call({global,app_test},connectNodes).
+gen_server:call({global,app_test},start_app).
 
+app_test:startAndConnect(node()).
+app_test:req_connect_nodes().
+app_test:req_start_app().
 

@@ -14,34 +14,50 @@
 
 -import(util,[integer_to_atom/1]).
 -import(funcGenerator,[generateSin/2,generatePolynom/2,solveP/3,solveS/3]).
--export([start/1, init/1, terminate/2, code_change/3, handle_info/2, handle_call/3, handle_cast/2, handle_event/2,start_global/1]).
--compile(export_all).
+-export([start/1,
+         init/1,
+         terminate/2,
+         code_change/3,
+         handle_info/2,
+         handle_call/3,
+         handle_cast/2,
+         handle_event/2,
+         handle_sync_event/3,
+         start_global/1]).
 -include_lib("wx/include/wx.hrl").
 -include("include/header.hrl").
 
+-define(MyServer,?MODULE).
 
 
-
-
-
-
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% brief - starts gfx application in global mode
+% param - Node on which the gfx server runs on
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 start_global(Node) ->
-  wx_object:start_link({global,?MyServer},?MODULE,[local,Node],[]).
-
+  io:format("entered  start_global~n"),
+  wx_object:start_link({global,?MyServer},?MODULE,[global,Node],[]).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% brief - starts gfx application in local mode
+% param - Node on which the gfx server runs on
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 start(Node) ->
   wx_object:start_link({local,?MyServer},?MODULE,[local,Node],[]).
-
-
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% brief - initializes the wx_object
+% param - Node = the node the object will run on, Mode = local || global
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 init([Mode,Node]) ->
   process_flag(trap_exit, true),
+  ets:new(?pathEts,[set, named_table, public]),
   InitState = init_layout(Mode,Node),
-  io:format("done init ~n"),
+  io:format("gfx done init ~n"),
   {InitState#state.frame,InitState}.
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Re-Paint Event - called by refresh
+% brief - wx repaint event called by refresh
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 handle_sync_event(#wx{event=#wxPaint{}}, _, State) ->
   draw(State),
   ok.
@@ -49,13 +65,14 @@ handle_sync_event(#wx{event=#wxPaint{}}, _, State) ->
 
 %% event by pressing start btn
 handle_event(#wx{obj  = StartBtn, event = #wxCommand{type = command_button_clicked}},
-    State = #state{storing_checkbox = StoringCheckBox,startBtn = StartBtn,nonStoring_checkbox = NStoringCheckBox}) ->
+    State = #state{storing_checkbox = StoringCheckBox,startBtn = StartBtn,nonStoring_checkbox = _NStoringCheckBox}) ->
   Flag = wxCheckBox:isChecked(StoringCheckBox),
   if
     Flag == true ->
-      Response = rplServer:start_link(?STORING);
+
+      Response = rpc:call('g_node@amirs-MacBook-Pro',rplWrapper,startRPL,[?STORING]);
     true ->
-      Response = rplServer:start_link(?NON_STORING)
+      Response = rpc:call('g_node@amirs-MacBook-Pro',rplWrapper,startRPL,[?NON_STORING])
   end,
   io:format("start response ~p~n",[Response]),
   wxButton:disable(StartBtn),
@@ -120,9 +137,9 @@ handle_event(#wx{obj = Q1_Node_List, event = #wxCommand{type = command_listbox_s
     notStarted ->
       NewSrc = wxListBox:getStringSelection(Q1_Node_List),
       PidString = queueKeyToPid(NewSrc,0),
-      [{_,Pid}] = ets:lookup(?pidStringEts,PidString),
+      [{_,Pid}] = gen_server:call({global,?etsServer},{lookup,?pidStringEts,PidString}),
       [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
-      gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},src}}}),
+      gen_server:call({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},src}}}),
       NewMsgState = srcSelected,
       NewState = State#state{src = Pid,msgState = NewMsgState},
       SrcText = "Source: " ++ NewSrc,
@@ -139,15 +156,14 @@ handle_event(#wx{obj = Q1_Node_List, event = #wxCommand{type = command_listbox_s
         true ->
           %%TODO: change the key that is returned to an actual PID in the real version
           PidString = queueKeyToPid(NewDst,0),
-          io:format("Pidstring from ets: ~p~n",[ets:lookup(?pidStringEts,PidString)]),
-          [{_,Pid}] = ets:lookup(?pidStringEts,PidString),
+          [{_,Pid}] = gen_server:call({global,?etsServer},{lookup,?pidStringEts,PidString}),
           wxButton:enable(State#state.sendMsg),
           wxButton:enable(State#state.removeDstBtn),
           case maps:is_key(NewDst,DstMap) of
             false ->
               NewDstMap = maps:put(NewDst,Pid,DstMap),
               [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
-              gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},destination}}}),
+              gen_server:call({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},destination}}}),
               wxListBox:append(DestinationComboBox,NewDst),
               NewState = State#state{destinations = NewDstMap},
               io:format("Destinations Map : ~p~n",[NewDstMap]),
@@ -164,9 +180,9 @@ handle_event(#wx{obj = Q2_Node_List, event = #wxCommand{type = command_listbox_s
     notStarted ->
       NewSrc = wxListBox:getStringSelection(Q2_Node_List),
       PidString = queueKeyToPid(NewSrc,0),
-      [{_,Pid}] = ets:lookup(?pidStringEts,PidString),
+      [{_,Pid}] = gen_server:call({global,?etsServer},{lookup,?pidStringEts,PidString}),
       [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
-      gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},src}}}),
+      gen_server:call({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},src}}}),
       NewMsgState = srcSelected,
       SrcText = "Source: " ++ NewSrc,
       wxTextCtrl:changeValue(SrcTextBox,SrcText),
@@ -183,15 +199,14 @@ handle_event(#wx{obj = Q2_Node_List, event = #wxCommand{type = command_listbox_s
         true ->
           %%TODO: change the key that is returned to an actual PID in the real version
           PidString = queueKeyToPid(NewDst,0),
-          io:format("Pidstring from ets: ~p~n",[ets:lookup(?pidStringEts,PidString)]),
-          [{_,Pid}] = ets:lookup(?pidStringEts,PidString),
+          [{_,Pid}] = gen_server:call({global,?etsServer},{lookup,?pidStringEts,PidString}),
           wxButton:enable(State#state.sendMsg),
           wxButton:enable(State#state.removeDstBtn),
           case maps:is_key(NewDst,DstMap) of
             false ->
               NewDstMap = maps:put(NewDst,Pid,DstMap),
               [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
-              gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},destination}}}),
+              gen_server:call({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},destination}}}),
               wxListBox:append(DestinationComboBox,NewDst),
               NewState = State#state{destinations = NewDstMap},
               io:format("Destinations Map : ~p~n",[NewDstMap]),
@@ -208,9 +223,9 @@ handle_event(#wx{obj = Q3_Node_List, event = #wxCommand{type = command_listbox_s
     notStarted ->
       NewSrc = wxListBox:getStringSelection(Q3_Node_List),
       PidString = queueKeyToPid(NewSrc,0),
-      [{_,Pid}] = ets:lookup(?pidStringEts,PidString),
+      [{_,Pid}] = gen_server:call({global,?etsServer},{lookup,?pidStringEts,PidString}),
       [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
-      gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},src}}}),
+      gen_server:call({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},src}}}),
       NewMsgState = srcSelected,
       SrcText = "Source: " ++ NewSrc,
       wxTextCtrl:changeValue(SrcTextBox,SrcText),
@@ -227,15 +242,14 @@ handle_event(#wx{obj = Q3_Node_List, event = #wxCommand{type = command_listbox_s
         true ->
           %%TODO: change the key that is returned to an actual PID in the real version
           PidString = queueKeyToPid(NewDst,0),
-          io:format("Pidstring from ets: ~p~n",[ets:lookup(?pidStringEts,PidString)]),
-          [{_,Pid}] = ets:lookup(?pidStringEts,PidString),
+          [{_,Pid}] = gen_server:call({global,?etsServer},{lookup,?pidStringEts,PidString}),
           wxButton:enable(State#state.removeDstBtn),
           wxButton:enable(State#state.sendMsg),
           case maps:is_key(NewDst,DstMap) of
             false ->
               NewDstMap = maps:put(NewDst,Pid,DstMap),
               [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
-              gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},destination}}}),
+              gen_server:call({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},destination}}}),
               wxListBox:append(DestinationComboBox,NewDst),
               NewState = State#state{destinations = NewDstMap},
               io:format("Destinations Map : ~p~n",[NewDstMap]),
@@ -252,9 +266,9 @@ handle_event(#wx{obj = Q4_Node_List, event = #wxCommand{type = command_listbox_s
     notStarted ->
       NewSrc = wxListBox:getStringSelection(Q4_Node_List),
       PidString = queueKeyToPid(NewSrc,0),
-      [{_,Pid}] = ets:lookup(?pidStringEts,PidString),
+      [{_,Pid}] = gen_server:call({global,?etsServer},{lookup,?pidStringEts,PidString}),
       [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
-      gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},src}}}),
+      gen_server:call({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},src}}}),
       NewMsgState = srcSelected,
       SrcText = "Source: " ++ NewSrc,
       wxTextCtrl:changeValue(SrcTextBox,SrcText),
@@ -271,15 +285,14 @@ handle_event(#wx{obj = Q4_Node_List, event = #wxCommand{type = command_listbox_s
         true ->
           %%TODO: change the key that is returned to an actual PID in the real version
           PidString = queueKeyToPid(NewDst,0),
-          io:format("Pidstring from ets: ~p~n",[ets:lookup(?pidStringEts,PidString)]),
-          [{_,Pid}] = ets:lookup(?pidStringEts,PidString),
+          [{_,Pid}] = gen_server:call({global,?etsServer},{lookup,?pidStringEts,PidString}),
           wxButton:enable(State#state.removeDstBtn),
           wxButton:enable(State#state.sendMsg),
           case maps:is_key(NewDst,DstMap) of
             false ->
               NewDstMap = maps:put(NewDst,Pid,DstMap),
               [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
-              gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},destination}}}),
+              gen_server:call({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},destination}}}),
               wxListBox:append(DestinationComboBox,NewDst),
               NewState = State#state{destinations = NewDstMap},
               io:format("Destinations Map : ~p~n",[NewDstMap]),
@@ -303,13 +316,13 @@ handle_event(#wx{obj = SendMsgBtn, event = #wxCommand{type = command_button_clic
   case length(OutputList) of
     0 -> {noreply,State};
     1 ->
-      gen_server:cast(rplServer,{sendUnicastMessage,Src,hd(OutputList),Msg}), %{sendUnicastMessage, From, To, Msg}
+      gen_server:cast({global,rplServer},{sendUnicastMessage,Src,hd(OutputList),Msg}), %{sendUnicastMessage, From, To, Msg}
       {noreply,State#state{msgID = MsgId + 1,msgState = sentMsg}};
     _ ->
       io:format("entered multicast option list = ~p~n",[OutputList]),
       MulticastMessageFormat = makeMulticast(OutputList,Src,Msg,MsgId),
       io:format("make multicast list : ~p~n",[MulticastMessageFormat]),
-      gen_server:cast(rplServer,{sendMulticastMessage,MulticastMessageFormat}), %%send multicast
+      gen_server:cast({global,rplServer},{sendMulticastMessage,MulticastMessageFormat}), %%send multicast
       {noreply,State#state{msgID = MsgId + length(OutputList),msgState = sentMsg}}
   end;
 
@@ -318,9 +331,9 @@ handle_event(#wx{obj = RemoveDst, event = #wxCommand{type = command_button_click
     State = #state{destinationCombobox = DestinationComboBox,removeDstBtn = RemoveDst,destinations = Destinations}) ->
   NodeToRemove = wxListBox:getStringSelection(DestinationComboBox),
   PidString = queueKeyToPid(NodeToRemove,0),
-  [{_,Pid}] = ets:lookup(?pidStringEts,PidString),
+  [{_,Pid}] = gen_server:call({global,?etsServer},{lookup,?pidStringEts,PidString}),
   [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
-  gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},normal}}}),
+  gen_server:call({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},normal}}}),
   NewDestinations = maps:remove(NodeToRemove,Destinations),
   removeNodeFromListBox(NodeToRemove,DestinationComboBox),
   case wxListBox:isEmpty(DestinationComboBox) of
@@ -335,16 +348,14 @@ handle_event(#wx{obj = RemoveSrc, event = #wxCommand{type = command_button_click
     State = #state{frame = _Frame,removeSrcBtn = RemoveSrc,srcTextBox = SrcTextBox,
       destinationCombobox = DestinationComboBox,removeDstBtn = RemoveDst,src = SrcPid,panel = Panel}) ->
   wxWindow:refresh(Panel),
-  [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},_MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,SrcPid}),
-  gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},normal}}}),
+  [{Pid,{Ref,NumOfRoots,DontCare,Func,Type,Direction,{X,Y},_MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,SrcPid}),
+  gen_server:call({global,?etsServer},{insert,?locationEts,{Pid,{Ref,NumOfRoots,DontCare,Func,Type,Direction,{X,Y},normal}}}),
   wxTextCtrl:changeValue(SrcTextBox,"Source : null"),
   %wxStaticText:setLabel(SrcTextBox,"Source: null"),
   PidList = gen_server:call({global,?etsServer},{getAll,?locationEts}),
-  io:format("ets table: ~p~n",[PidList]),
-  NewPidList = [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},normal}} || {Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},State}} <- PidList],
+  NewPidList = [{_Pid,{_Ref,_NumOfRoots,_DontCare,_Func,_Type,_Direction,{_X,_Y},normal}} || {_Pid,{_Ref,_NumOfRoots,_DontCare,_Func,_Type,_Direction,{_X,_Y},_State}} <- PidList],
 %% todo: check if inserting multiple elements is done correctly
-  gen_server:cast({global,?etsServer},{insert,?locationEts,NewPidList}),
-  io:format("remove src event Text value = ~p~n",[wxTextCtrl:getValue(SrcTextBox)]),
+  gen_server:call({global,?etsServer},{insert,?locationEts,NewPidList}),
   resetQueue(DestinationComboBox,wxListBox:isEmpty(DestinationComboBox)),
   wxButton:disable(RemoveSrc),
   wxButton:disable(RemoveDst),
@@ -393,11 +404,19 @@ handle_event(#wx{obj = NewNodeBtn, event = #wxCommand{type = command_button_clic
       {noreply,_StateA}
   end.
 
+handle_call(test, _From, State = #state{}) ->
+  %io:format("got draw ~n"),
+  Reply = 1,
+  {reply,Reply,State};
+
 handle_call({draw}, _From, State = #state{panel = Panel}) ->
   wxPanel:refresh(Panel),
   %io:format("got draw ~n"),
   Reply = ok,
-  {reply,Reply,State}.
+  {reply,Reply,State};
+
+handle_call(Request, _From, State = #state{}) ->
+  {reply,Request,State}.
 
 %% handle event for sending a message from the RPL server - when there is an empty path
 handle_cast({messageSent,_MsgId,[]}, State = #state{}) ->
@@ -408,12 +427,12 @@ handle_cast({messageSent,_MsgId,[]}, State = #state{}) ->
 %% handle event for sending a message from the RPL server.
 handle_cast({messageSent,MsgId,Pathlist}, State = #state{destinationCombobox = DestinationQeueu,srcTextBox = SrcTextBox}) ->
   Path = makePath(Pathlist),
-  io:format("msgRecieved: MsgId = ~p , Path = ~p~n",[MsgId,Path]),
+  io:format("path is: ~p~n",[Path]),
   ets:insert(?pathEts,{MsgId,Path}),
   PidList = gen_server:call({global,?etsServer},{getAll,?locationEts}),
-  NewPidList = [{Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},normal}} || {Pid,{_Ref,_NumOfRoots,DontCare,_Func,_Type,_Direction,{X,Y},State}} <- PidList],
+  NewPidList = [{_Pid,{_Ref,_NumOfRoots,_DontCare,_Func,_Type,_Direction,{_X,_Y},normal}} || {_Pid,{_Ref,_NumOfRoots,_DontCare,_Func,_Type,_Direction,{_X,_Y},_State}} <- PidList],
 %% todo: check if inserting multiple elements is done correctly
-  gen_server:cast({global,?etsServer},{insert,?locationEts,NewPidList}),
+  gen_server:call({global,?etsServer},{insert,?locationEts,NewPidList}),
   resetQueue(DestinationQeueu,wxListBox:isEmpty(DestinationQeueu)),
   wxTextCtrl:changeValue(SrcTextBox,"Source : null"),
   NewState = State#state{msgState = notStarted,src = nullptr},
@@ -422,7 +441,6 @@ handle_cast({messageSent,MsgId,Pathlist}, State = #state{destinationCombobox = D
 handle_cast(draw, State = #state{panel = Panel}) ->
   %{_Reply,NewState} = wxPanel:refresh(Panel),
   wxPanel:refresh(Panel),
-  %io:format("got draw ~n"),
   %{noreply,NewState};
   {noreply,State};
 
@@ -435,9 +453,9 @@ handle_info({'DOWN', Ref, process, Pid, {Info, Reason, ProcState}}, State= #stat
   Flag = wxCheckBox:isChecked(StoringCheckBox),
   if
     Flag == true ->
-      Response = rplServer:start_link(?STORING);
+      Response = rpc:call('g_node@amirs-MacBook-Pro',rplWrapper,startRPL,[?STORING]);
     true ->
-      Response = rplServer:start_link(?NON_STORING)
+      Response = rpc:call('g_node@amirs-MacBook-Pro',rplWrapper,startRPL,[?NON_STORING])
   end,
   io:format("start response ~p~n",[Response]),
   {noreply, State};
@@ -448,7 +466,7 @@ code_change(_, _, State) ->
   {stop, ignore, State}.
 
 terminate(_Reason, _) ->
-  whereis(?APP_SERVER)!{gfxTerminate,self(),_Reason},
+  %whereis(?APP_SERVER)!{gfxTerminate,self(),_Reason},
   io:format("entered terminate ~n"),
   wx:destroy(),
   ok.
@@ -457,8 +475,8 @@ terminate(_Reason, _) ->
 %% Local functions
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 makePath([]) -> [];
-makePath([Head|[H|[]]]) -> {Head,H};
-makePath([Head | [H|T]]) -> [{Head,H} | makePath([H|T])].
+makePath(Path) when length(Path) == 2 -> {hd(Path),hd(tl(Path))};
+makePath([Head|T]) -> [{Head,hd(T)} | makePath(T)].
 
 
 makeMulticast([H|[]],Src,Msg,MsgId) -> [{messageFormat,MsgId,Src,H,Msg}];
@@ -481,9 +499,7 @@ queueKeyToPid(Key,0) ->
   queueKeyToPid(tl(Key),1);
 queueKeyToPid(Key,1) ->
   queueKeyToPid(tl(Key),2);
-queueKeyToPid(Key,2) ->
-  io:format("key is : ~p~n",[Key]),
-  Key.
+queueKeyToPid(Key,2) -> Key.
 
 integer_to_string(Integer) when is_integer(Integer) ->
   erlang:integer_to_list(Integer).
@@ -631,21 +647,11 @@ init_layout(Mode,Node) ->
     numOfNodes = 0, numOfRoots = 0, nq1 = List_NQ_1_Label,nq2 = List_NQ_2_Label,nq3 = List_NQ_3_Label,nq4 =  List_NQ_4_Label,
     msgState = notStarted,src = nullptr, destinations = #{},startBtn = StartBtn,removeDstBtn = RemoveDst,removeSrcBtn = RemoveSrc,
     storing_checkbox = Storing_checkBox,nonStoring_checkbox = NStoring_checkBox,destinationCombobox = DestinationList,
-    srcTextBox = SrcTxt, msgID = 0, pathList = #{},debug = 300
+    srcTextBox = SrcTxt, msgID = 0, pathList = #{},createdFirst = false,debug = 350
   }.
 
-createRoot(_State) -> io:format("create root ~n").
-createNode(_State) -> io:format("create node ~n").
-
-newMessage(_State) -> io:format("new message ~n").
-
-quit(_State) -> io:format("quit ~n").
-
-drawSim(_State) -> 1.
-
-
-create(RootOrNode, State = #state{debug = Debug,numOfRoots = NumOfRoots,numOfNodes = NumOfNodes})  ->
-  io:format("RootOrNode = ~p~n",[RootOrNode]),
+create(RootOrNode, State = #state{numOfRoots = NumOfRoots,
+  numOfNodes = NumOfNodes,createdFirst = CreatedFirst})  ->
   {Func,Type} = case State#state.moveType of
                   "Random" -> {random,random};
                   "Polynomial" -> {funcGenerator:generatePolynom(1,[]),polynomial};
@@ -658,22 +664,29 @@ create(RootOrNode, State = #state{debug = Debug,numOfRoots = NumOfRoots,numOfNod
                       polynomial -> getStartingPos(Func,Type,X,RootOrNode, State);
                       sinusoidal -> getStartingPos(Func,Type,X,RootOrNode, State)
                     end,
-  NewState = case RootOrNode of
+  Midstate = case RootOrNode of
                root ->
-                 {Pid,Ref} = gen_server:call(rplServer, {addNode, root}),
-                 ets:insert(?nodePidsEts,{nodePid,Pid}),
-                 gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{Ref,NumOfRoots,RootOrNode,Func,Type,?incerement,{Debug,350},normal}}}),
-                 gen_server:cast({global,?etsServer},{insert,?ROOT_LIST,{Pid, {Ref,Debug,350}}}),
-                 State#state{numOfRoots = NumOfRoots + 1,debug = Debug + 50};
+                 %{Pid,Ref} = gen_server:call(?APP_SERVER, {addNode, root}),
+                 {_,{Pid,Ref}} = gen_server:call({global,rplServer},{addNode,root}),
+                 %{Pid,Ref} = rpc:call('g_node@amirs-MacBook-Pro',rplWrapper,rpcReq,[{addNode, root}]),
+                 gen_server:call({global,?etsServer},{insert,?nodePidsEts,{nodePid,Pid}}),
+                 gen_server:call({global,?etsServer},{insert,?locationEts,{Pid,{Ref,NumOfRoots,RootOrNode,Func,Type,?incerement,{FinalX,FinalY},normal}}}),
+                 gen_server:call({global,?etsServer},{insert,?ROOT_LIST,{Pid, {Ref,FinalX,FinalY}}}),
+                 State#state{numOfRoots = NumOfRoots + 1};
                node ->
-                 {Pid1,Ref1} = gen_server:call(rplServer, {addNode, node}),
-                 ets:insert(?nodePidsEts,{nodePid,Pid1}),
-                 gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid1,{Ref1,NumOfRoots,RootOrNode,Func,Type,?incerement,{Debug,350},normal}}}),
-                 State#state{numOfNodes = NumOfNodes + 1,debug = Debug + 50}
+                 {_,{Pid1,Ref1}} = gen_server:call({global,rplServer},{addNode,node}),
+                 gen_server:call({global,?etsServer},{insert,?nodePidsEts,{nodePid,Pid1}}),
+                 gen_server:call({global,?etsServer},{insert,?locationEts,{Pid1,{Ref1,NumOfRoots,RootOrNode,Func,Type,?incerement,{FinalX,FinalY},normal}}}),
+                 State#state{numOfNodes = NumOfNodes + 1}
              end,
   if
-    RootOrNode == root -> {root_OK,NewState};
-    true -> {node_OK,NewState}
+    CreatedFirst == false -> gen_server:cast({global,'m_node@amirs-MacBook-Pro'},drawGFX);
+    true -> io:format("Created a new node,create flag= ~p~n",[CreatedFirst])
+  end,
+  FinalState = Midstate#state{createdFirst = true},
+  if
+    RootOrNode == root -> {root_OK,FinalState};
+    true -> {node_OK,FinalState}
   end.
 
 getStartingPos(Func,Type,X,_RootOrNode, _State) ->
@@ -693,7 +706,7 @@ getStartingPos(Func,Type,X,_RootOrNode, _State) ->
 draw(State = #state{panel = Panel,node_list_q_1 = Q1,node_list_q_2 = Q2,
   node_list_q_3 = Q3,node_list_q_4 = Q4}) ->
   LocationList = gen_server:call({global,?etsServer},{getAll,?locationEts}),
-  PidList = ets:lookup(?nodePidsEts,nodePid),
+  %PidList = gen_server:call({global,?etsServer},{lookup,?nodePidsEts,nodePid}),
   eraseAllOldLocs(Panel),
   drawGrid(Panel),
   resetQueus(Q1,Q2,Q3,Q4),
@@ -736,9 +749,8 @@ drawPath(PathList,Panel) when not(is_tuple(PathList)) ->
   wxClientDC:destroy(Paint),
   drawPath(tl(PathList),Panel);
 drawPath(PathList,Panel) when is_tuple(PathList) ->
-  [{_,{_,_,_,_,_,_,{Xs,Ys},_}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,erlang:element(1,hd(PathList))}),
-  [{_,{_,_,_,_,_,_,{Xd,Yd},_}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,erlang:element(2,hd(PathList))}),
-
+  [{_,{_,_,_,_,_,_,{Xs,Ys},_}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,erlang:element(1,PathList)}),
+  [{_,{_,_,_,_,_,_,{Xd,Yd},_}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,erlang:element(2,PathList)}),
   Paint = wxClientDC:new(Panel),
   Brush = wxBrush:new(?wxRED),
   wxClientDC:setBrush(Paint,Brush),
@@ -748,34 +760,18 @@ drawPath(PathList,Panel) when is_tuple(PathList) ->
 update(Panel,[{Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y},MsgRole}}|[]],Q1,Q2,Q3,Q4) ->
   %[{Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y},MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
   {NewX,NewY} = updateLocation({Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y},MsgRole}}),
-  {Nq1,Nq2,Nq3,Nq4} = insertToQueues(Pid,{X,Y},NodeType,Q1,Q2,Q3,Q4),
+  {Nq1,Nq2,Nq3,Nq4} = insertToQueues(Pid,{NewX,NewY},NodeType,Q1,Q2,Q3,Q4),
   drawNode({NewX,NewY},NodeType,MsgRole,Panel),
   %drawNode({NewX,NewY},NodeType,MsgRole,Panel),
   {Nq1,Nq2,Nq3,Nq4};
 update(Panel,[{Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y},MsgRole}}|T],Q1,Q2,Q3,Q4) ->
   %[{Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y},MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
   {NewX,NewY} = updateLocation({Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y},MsgRole}}),
-  {Nq1,Nq2,Nq3,Nq4} = insertToQueues(Pid,{X,Y},NodeType,Q1,Q2,Q3,Q4),
-  drawNode({NewX,NewY},NodeType,MsgRole,Panel),
-  %drawNode({NewX,NewY},NodeType,MsgRole,Panel),
-  update(Panel,T,Nq1,Nq2,Nq3,Nq4);
-
-
-
-update(Panel,[{nodePid,Pid}|[]],Q1,Q2,Q3,Q4) ->
-  [{Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y},MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
-  {NewX,NewY} = updateLocation({Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y},MsgRole}}),
-  {Nq1,Nq2,Nq3,Nq4} = insertToQueues(Pid,{X,Y},NodeType,Q1,Q2,Q3,Q4),
-  drawNode({NewX,NewY},NodeType,MsgRole,Panel),
-  %drawNode({NewX,NewY},NodeType,MsgRole,Panel),
-  {Nq1,Nq2,Nq3,Nq4};
-update(Panel,[{nodePid,Pid}|T],Q1,Q2,Q3,Q4) ->
-  [{Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y},MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
-  {NewX,NewY} = updateLocation({Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y},MsgRole}}),
-  {Nq1,Nq2,Nq3,Nq4} = insertToQueues(Pid,{X,Y},NodeType,Q1,Q2,Q3,Q4),
+  {Nq1,Nq2,Nq3,Nq4} = insertToQueues(Pid,{NewX,NewY},NodeType,Q1,Q2,Q3,Q4),
   drawNode({NewX,NewY},NodeType,MsgRole,Panel),
   %drawNode({NewX,NewY},NodeType,MsgRole,Panel),
   update(Panel,T,Nq1,Nq2,Nq3,Nq4).
+
 
 updateLocation({Pid,{Ref,NumOfRoots,_NodeType,Func,MovementType,Direction,{X,Y},MsgRole}}) ->
   {NewX,NewY,NewDirection} = case MovementType of
@@ -783,7 +779,7 @@ updateLocation({Pid,{Ref,NumOfRoots,_NodeType,Func,MovementType,Direction,{X,Y},
                                polynomial -> getPolynomialCoordinates(Func,Direction,X);
                                sinusoidal -> getSinusoidalCoordinates(Func,Direction,X)
                              end,
-  gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{Ref,NumOfRoots,_NodeType,Func,MovementType,NewDirection,{NewX,NewY},MsgRole}}}),
+  gen_server:call({global,?etsServer},{insert,?locationEts,{Pid,{Ref,NumOfRoots,_NodeType,Func,MovementType,NewDirection,{NewX,NewY},MsgRole}}}),
   {NewX,NewY}.
 
 drawGrid(Panel) ->
@@ -823,7 +819,7 @@ insertToQueues(Pid,{X,Y},NodeType,Q1,Q2,Q3,Q4) ->
   B = lists:flatten(io_lib:format("~p", [hd(tl(PidString))])),
   C = lists:flatten(io_lib:format("~p", [hd(tl(tl(PidString)))])),
   ListKey = AtomString ++ A ++ B ++ C,
-  ets:insert(?pidStringEts,{A ++ B ++ C , Pid}),
+  gen_server:call({global,?etsServer},{insert,?pidStringEts,{A ++ B ++ C , Pid}}),
   case {X,Y}  of
     {X1,Y1} when X1 >= ?GridMapSize andalso Y1 >= ?GridMapSize ->
       wxListBox:append(Q1,[ListKey]);
@@ -935,9 +931,9 @@ updateCoordinates({nodePid,Pid}) ->
                              end,
   if
     RootOrNode == root ->
-      gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{Ref,NumOfRoots,RootOrNode,Func,MovementType,NewDirection,{NewX,NewY}}}}),
-      gen_server:cast({global,?etsServer},{insert,?ROOT_LIST,{Pid,{Ref,NewX,NewY}}});
-    true -> gen_server:cast({global,?etsServer},{insert,?locationEts,{Pid,{Ref,NumOfRoots,RootOrNode,Func,MovementType,NewDirection,{NewX,NewY}}}})
+      gen_server:call({global,?etsServer},{insert,?locationEts,{Pid,{Ref,NumOfRoots,RootOrNode,Func,MovementType,NewDirection,{NewX,NewY}}}}),
+      gen_server:call({global,?etsServer},{insert,?ROOT_LIST,{Pid,{Ref,NewX,NewY}}});
+    true -> gen_server:call({global,?etsServer},{insert,?locationEts,{Pid,{Ref,NumOfRoots,RootOrNode,Func,MovementType,NewDirection,{NewX,NewY}}}})
   end.
 
 getRandomCoordinates(X,Y) ->
@@ -1023,3 +1019,8 @@ getSinusoidalCoordinates(Func,Direction,X) ->
 
 transformXtoT(X) -> X - 350.
 transformTtoX(T) -> T + 350.
+
+test() ->
+  io:format("entered test~n"),
+  wx_object:call({global,?MyServer},test).
+ % spawn_link('g_node@amirs-MacBook-Pro',gfx_server,start_global,['g_node@amirs-MacBook-Pro']).

@@ -8,11 +8,12 @@
 %%%-------------------------------------------------------------------
 -module(interruptor).
 -author("amir").
+-include("include/header.hrl").
 %% API
 -export([loop/1]).
 
 loop(Timeout) ->
-  wx_object:cast(gfx_server,draw),
+  gen_server:cast({global,gfx_server},draw),
   %io:format("interrupting ~n"),
   timer:sleep(Timeout),
   loop(Timeout).

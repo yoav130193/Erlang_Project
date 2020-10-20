@@ -36,7 +36,7 @@
 %%--------------------------------------------------------------------
 
 start(Name) ->
-  gen_server:start_link({global, ?MODULE}, ?MODULE, Name, []).
+  gen_server:start_link({global,Name}, ?MODULE, ?MODULE, []).
 
 start() ->
   gen_server:start_link({local, ?MODULE}, ?MODULE, ?MODULE, []).
@@ -64,7 +64,7 @@ init(Name) ->
   NodeList = parseXML(),
   State = #appstate{activeNodes = [],nodesList = NodeList,gfx = false,rplserver = false,name = Name},
   ets:new(?appEts, [set, named_table, public]),
-  io:format("app finished init~n"),
+  io:format("app finished init, nodes from XML ~p~n",[NodeList]),
   {ok, State}.
 
 %%--------------------------------------------------------------------
@@ -97,14 +97,29 @@ handle_call(connectNodes,_From, State=#appstate{nodesList = NodeList}) ->
              end,
   {reply, ok, NewState};
 
+handle_call({addNode, root},_From, State=#appstate{}) ->
+  io:format("got addroot app~n"),
+  {_,{Pid,Ref}} = rpc:call('g_node@amirs-Macbook-Pro',rplServer,rpc_req,[{addNode, root}]),
+  {reply,{Pid,Ref},State};
+
+handle_call({addNode, node},_From, State=#appstate{}) ->
+  {_,{Pid,Ref}} = rpc:call('g_node@amirs-Macbook-Pro',rplServer,rpc_req,[{addNode, node}]),
+  %{_,{Pid,Ref}} = gen_server:call({global,?RPL_SERVER},{addNode, node}),
+  {reply,{Pid,Ref},State};
+
 %% starting the graphics and request empty playground from the first node in queue-global
 
-handle_call(start_app,_From, State = #appstate{nodesList = [H|T]}) ->
-  etsServer:start_link(),
-  [{_NodeNameS,NodeNameA}] = ets:lookup(?appEts,H),
-  gfx_server:start_global(NodeNameA),
-  io:format("starts in global mode ~n"),
-  {reply,ok, State#appstate{gfx = true,etsServer = true}};
+handle_call(start_app,_From, State = #appstate{nodesList = [_H|_T],activeNodes = [Ah|At]}) ->
+
+  %cast(Node, Module, Function, Args)
+  %{Pid,Ref} = rpc:async_call('g_node@amirs-MacBook-Pro',rplServer,start_link,[?STORING]),
+  %io:format("rpc res: ~p~n",[{Pid,Ref}]),
+  %rpc:async_call('g_node@amirs-Macbook-Pro',gfx_server,start_global,['g_node@amirs-Macbook-Pro','g_node@amirs-Macbook-Pro']),
+  {reply,ok, State#appstate{gfx = true,etsServer = true,activeNodes = At ++ Ah}};
+
+handle_call({rpl,StoringMode},_From, State = #appstate{}) ->
+  Res = rplServer:start_link(StoringMode),
+  {reply,Res, State#appstate{gfx = true,etsServer = true}};
 
 handle_call(_Request, _From, State) ->
   {reply, ok, State}.
@@ -121,6 +136,10 @@ handle_call(_Request, _From, State) ->
   {noreply, NewState :: #appstate{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #appstate{}}).
 
+handle_cast(drawGFX,State) ->
+  spawn(interruptor,loop,[150]),
+  io:format("spaned interruptor for gfx_server~n"),
+  {noreply,State};
 
 
 handle_cast(_Request, State) ->
@@ -190,14 +209,18 @@ connectNodes(State=#appstate{},[H|T]) ->
   io:format("Res = ~p~n",[Res]),
   connectNodes(State,Res,H,T).
 
-connectNodes(State=#appstate{activeNodes = ActiveNodes},true,H,[]) -> {ok,State#appstate{activeNodes = ActiveNodes ++ H}};
-connectNodes(State=#appstate{},false,_H,[]) -> {ok,State};
+connectNodes(State=#appstate{activeNodes = ActiveNodes},true,H,[]) ->
+  io:format("Connected to ~p~n",[H]),
+  {ok,State#appstate{activeNodes = ActiveNodes ++ H}};
+connectNodes(State=#appstate{},false,H,[]) ->
+  io:format("Can't Connect to Node ~p~n",[H]),
+  {ok,State};
 connectNodes(State=#appstate{},false,H,T) ->
   io:format("Can't Connect to Node ~p~n",[H]),
   [{_String,Atom}] = ets:lookup(?appEts,H),
   connectNodes(State,net_kernel:connect_node(Atom),hd(T),tl(T));
 connectNodes(State=#appstate{activeNodes = ActiveNodes},true,H,T) ->
-  io:format("arraived at true with list~n"),
+  io:format("Connected to ~p~n",[H]),
   [{_String,Atom}] = ets:lookup(?appEts,hd(T)),
   connectNodes(State#appstate{activeNodes = ActiveNodes ++ H},net_kernel:connect_node(Atom),hd(T),tl(T)).
 
@@ -209,7 +232,10 @@ req_connect_nodes() -> gen_server:call({global,node()},connectNodes).
 
 %%opens control and graphics in the requested node
 
-req_start_app() -> gen_server:call({global,node()},start_app).
+req_start_app() ->
+  etsServer:start_link(),
+  gfx_server:start_global(node()).
+  %gen_server:call({global,node()},start_app).
 
 startAndConnect(Name) -> start(Name).
 
@@ -221,6 +247,7 @@ parseXML() ->
 
 makeNodeMap([H|[]]) -> ets:insert(?appEts,{H,list_to_atom(H)});
 makeNodeMap(ActiveNodes) ->
+  io:format("~p~n",[hd(ActiveNodes)]),
   ets:insert(?appEts,{hd(ActiveNodes),list_to_atom(hd(ActiveNodes))}),
   makeNodeMap(tl(ActiveNodes)).
 

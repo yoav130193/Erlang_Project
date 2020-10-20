@@ -26,7 +26,7 @@ dioMsg(DodagId, Rank, Version, Mop) ->
 sendDioToNeighbors(Pid, DodagId, Rank, Version, Mop, []) ->
   io:format("DODAG_ID: ~p DIO_MSG, root: ~p, No Neighbors ~n~n", [DodagId, Pid]),
   DioMsg = dioMsg(DodagId, Rank, Version, Mop),
-  ets:insert(?MSG_TABLE, {#msg_table_key{dodagId = DioMsg#dioMsg.dodagId, from = self(), to = []}, {msg}}),
+  gen_server:call({global,?etsServer},{insert,?MSG_TABLE,{#msg_table_key{dodagId = DioMsg#dioMsg.dodagId, from = self(), to = []}, {msg}}}),
   utils:deleteMessageFromEts(DioMsg#dioMsg.dodagId, self(), [], {finishedBuilding}, dio);
 
 sendDioToNeighbors(Pid, DodagId, Rank, Version, Mop, Neighbors) ->
@@ -34,7 +34,7 @@ sendDioToNeighbors(Pid, DodagId, Rank, Version, Mop, Neighbors) ->
   io:format("DODAG_ID: ~p ,DIO message from: ~p, sends to: ~p msg: ~p~n~n", [DodagId, Pid, Neighbors, DioMsg]),
   %saveDioToFile(self(), Neighbors, DodagId, Version, Rank),
   lists:foreach(fun(Element) ->
-    ets:insert(?MSG_TABLE, {#msg_table_key{dodagId = DioMsg#dioMsg.dodagId, from = self(), to = element(1, Element)}, {msg}}),
+    gen_server:call({global,?etsServer},{insert,?MSG_TABLE,{#msg_table_key{dodagId = DioMsg#dioMsg.dodagId, from = self(), to = element(1, Element)}, {msg}}}),
     gen_server:cast(element(1, Element), {dioMsg, self(), DioMsg})
 %element(1, Element) ! {dioMsg, self(), DioMsg}
                 end, Neighbors).
@@ -61,6 +61,7 @@ daoMsg(DodagId, UpdateType) ->
 
 sendDaoAfterDio(From, To, DodagId, UpdateType, State) ->
   DaoMsg = daoMsg(DodagId, UpdateType),
+  io:format("DODAG_ID: ~p,DAO message from: ~p to: ~p~nmsg:~p~n~n", [DodagId, From, To, DaoMsg]),
   %saveDaoToFile(From, To, DodagId),
   gen_server:cast(To, {daoMsg, From, DaoMsg}).
 
@@ -74,7 +75,7 @@ daoAckMsg(Dodag, UpdateType) ->
 
 sendDaoAckAfterDao(From, To, DodagId, UpdateType, State) ->
   DaoAckMsg = daoAckMsg(DodagId, UpdateType),
-%  io:format("DODAG_ID: ~p,DAO-ACK message from: ~p to: ~p~nmsg:~p~n~n", [DodagId, From, To, DaoAckMsg]),
+  io:format("DODAG_ID: ~p,DAO-ACK message from: ~p to: ~p~nmsg:~p~n~n", [DodagId, From, To, DaoAckMsg]),
   saveDaoAckToFile(From, To, DodagId),
   gen_server:cast(To, {daoAckMsg, From, DaoAckMsg}).
 

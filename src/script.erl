@@ -34,14 +34,33 @@ startAllReal() ->
   gfx_server:start(1).
 
 compileAll() ->
+  io:format("compiling rplServer~n"),
   compile:file(rplServer),
+  io:format("compiling nodeServer~n"),
   compile:file(nodeServer),
+  io:format("compiling rootServer~n"),
   compile:file(rootServer),
+  io:format("compiling rpl_msg~n"),
   compile:file(rpl_msg),
+  io:format("compiling gfx_server~n"),
   compile:file(gfx_server),
+  io:format("compiling funcGenerator~n"),
   compile:file(funcGenerator),
+  io:format("compiling interruptor~n"),
   compile:file(interruptor),
+  io:format("compiling rplWrapper~n"),
+  compile:file(rplWrapper),
+  io:format("compiling rootWrapper~n"),
+  compile:file(rootWrapper),
+  io:format("compiling nodeWrapper~n"),
+  compile:file(nodeWrapper),
+  io:format("compiling app_test~n"),
+  compile:file(app_test),
+  io:format("compiling etsServer~n"),
+  compile:file(etsServer),
+  io:format("compiling utils~n"),
   compile:file(utils).
+
 
 
 addNode(Server_Pid, root) ->

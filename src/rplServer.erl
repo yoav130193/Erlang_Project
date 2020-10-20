@@ -19,9 +19,14 @@
   handle_info/2,
   init/1, deleteNode/0,
   terminate/2,
+  rpcReq/1,
   printData/1]).
 
-start_link(Mop) -> gen_server:start_link({local, ?RPL_SERVER}, ?RPL_SERVER, [Mop], []).
+start_link(Mop) ->
+  io:format("entered rpc ~n"),
+  gen_server:start_link({global,?RPL_SERVER}, ?RPL_SERVER, [Mop], []).
+%start_link(Mop) -> gen_server:start_link({global, ?RPL_SERVER}, ?RPL_SERVER, [Mop,global], []).
+
 
 
 %*****************   Initialization    ***************%
@@ -54,7 +59,9 @@ init(Mop) ->
 % Return to the GUI the Pid of the new node
 handle_call({addNode, node}, _From, Data) ->
   %{_, Pid} = nodeServer:start_link({Data#rplServerData.nodeCount, Data#rplServerData.mop}),
-  {_, {Pid, Ref}} = nodeServer:start_link({Data#rplServerData.nodeCount, Data#rplServerData.mop}),
+  {_, {Pid, Ref}} = gen_server:call({global,nodeWrapper},{spawnNode,Data#rplServerData.nodeCount, Data#rplServerData.mop}),
+ % {_, {Pid, Ref}} = nodeServer:start_link({Data#rplServerData.nodeCount, Data#rplServerData.mop}),
+
 %  Pid = 0, Ref = 0,
 %  {_, {Pid, Ref}} = rpc:call(?NODE_1, ?NODE_SERVER, start_link, [{Data#rplServerData.nodeCount, Data#rplServerData.mop}]),
   io:format("rplserver wants to add a normal node: ~p~n", [Pid]),
@@ -67,7 +74,9 @@ handle_call({addNode, node}, _From, Data) ->
 % Return to the GUI the Pid of the new node
 handle_call({addNode, root}, _From, Data) ->
   io:format("rplserver wants to add a root node~n"),
-  {_, {Pid, Ref}} = rootServer:start_link({Data#rplServerData.rootCount, Data#rplServerData.mop}),
+  % {spawnRoot,RootCount,Mop}
+  {_, {Pid, Ref}} = gen_server:call({global,rootWrapper},{spawnRoot,Data#rplServerData.rootCount, Data#rplServerData.mop}),
+  %{_, {Pid, Ref}} = rootServer:start_link({Data#rplServerData.rootCount, Data#rplServerData.mop}),
 %  ets:insert(?NODE_LIST, {Pid, {Ref, hd(Data#rplServerData.randomLocationList), hd(tl(Data#rplServerData.randomLocationList))}}),
   %ets:insert(?ROOT_LIST, {Pid, {Ref, hd(Data#rplServerData.randomLocationList), hd(tl(Data#rplServerData.randomLocationList))}}),
   NewData = updateData(Data#rplServerData.nodeCount + 1, Data#rplServerData.rootCount + 1,
@@ -80,7 +89,7 @@ handle_call({addNode, root}, _From, Data) ->
 % no reply to the GUI
 % server sends to all the roots to start building the network
 handle_cast({buildNetwork}, Data) ->
-  RootList = ets:tab2list(?ROOT_LIST),
+  RootList = gen_server:call({global,?etsServer},{getAll,?ROOT_LIST}),
   buildNetwork(RootList),
   {noreply, Data};
 
@@ -89,10 +98,8 @@ handle_cast({buildNetwork}, Data) ->
 % When finished, need to send the message
 handle_cast({finishedBuilding}, Data) ->
   %  deleteNode(),
-  RootList = ets:tab2list(?ROOT_LIST),
+  RootList = gen_server:call({global,?etsServer},{getAll,?ROOT_LIST}),
   downwardDigraphBuild(RootList),
-
-
   {noreply, Data};
 
 
@@ -100,7 +107,7 @@ handle_cast({finishedBuilding}, Data) ->
 
 % Start Building the digraph
 handle_cast({downwardDigraphBuild}, Data) ->
-  RootList = ets:tab2list(?ROOT_LIST),
+  RootList = gen_server:call({global,?etsServer},{getAll,?ROOT_LIST}),
   downwardDigraphBuild(RootList),
   {noreply, Data};
 
@@ -130,7 +137,7 @@ handle_cast({sendMessage, From, To, Msg}, Data) ->
 % roots start building the network
 % After the network is ready -> try send a message
 handle_cast({sendUnicastMessage, From, To, Msg}, Data) ->
-  RootList = ets:tab2list(?ROOT_LIST),
+  RootList = gen_server:call({global,?etsServer},{getAll,?ROOT_LIST}),
   NewData = updateData(Data#rplServerData.nodeCount, Data#rplServerData.rootCount,
     Data#rplServerData.randomLocationList, Data#rplServerData.msg_id + 1, Data#rplServerData.messageList ++
     [#messageFormat{msgId = Data#rplServerData.msg_id + 1, from = From, to = To, msg = Msg}], Data#rplServerData.mop),
@@ -142,7 +149,7 @@ handle_cast({sendUnicastMessage, From, To, Msg}, Data) ->
 % After the network is ready -> try send a message
 % MessageList format  = List of records of messageFormat (above)
 handle_cast({sendMulticastMessage, MessageList}, Data) ->
-  RootList = ets:tab2list(?ROOT_LIST),
+  RootList = gen_server:call({global,?etsServer},{getAll,?ROOT_LIST}),
   NewData = addMessagesToData(MessageList, Data),
   buildNetwork(RootList),
   {noreply, NewData};
@@ -152,7 +159,7 @@ handle_cast({sendMulticastMessage, MessageList}, Data) ->
 
 % Just for debug
 handle_cast({getAllPath}, Data) ->
-  RootList = ets:tab2list(rootList),
+  RootList = gen_server:call({global,?etsServer},{getAll,?ROOT_LIST}),
   getAllPath(RootList),
   {noreply, Data};
 
@@ -208,11 +215,12 @@ sendAllMessages(MessageList, Mop) ->
     ?STORING ->
       Path = gen_server:call(Message#messageFormat.from, {sendMessageStoring, Message#messageFormat.from, Message#messageFormat.to, Message#messageFormat.msg}, 100000),
       io:format("RPL Server:,Storing Message, From: ~p, To: ~p , Path: ~p~n~n ", [Message#messageFormat.from, Message#messageFormat.to, Path]),
-      wx_object:cast(gfx_server,{messageSent,Message#messageFormat.msgId,Path});
+      %wx_object:cast({global,gfx_server},{messageSent,Message#messageFormat.msgId,Path}),
+      gen_server:cast({global,gfx_server},{messageSent,Message#messageFormat.msgId,Path});
     ?NON_STORING ->
       Path = gen_server:call(Message#messageFormat.from, {sendMessageNonStoring, Message#messageFormat.from, Message#messageFormat.to, Message#messageFormat.msg}, 100000),
       io:format("RPL Server:,NON_STORING Message, From: ~p, To: ~p , Path: ~p~n~n ", [Message#messageFormat.from, Message#messageFormat.to, Path]),
-      wx_object:cast(gfx_server,{messageSent,Message#messageFormat.msgId,Path})
+      wx_object:cast({global,gfx_server},{messageSent,Message#messageFormat.msgId,Path})
   end,
   sendAllMessages(tl(MessageList), Mop).
 
@@ -225,9 +233,13 @@ addMessagesToData(MessageList, NewData) ->
     [#messageFormat{msgId = NewData#rplServerData.msg_id + 1, from = Message#messageFormat.from, to = Message#messageFormat.to, msg = Message#messageFormat.msg}], NewData#rplServerData.mop)).
 
 
+rpcReq({addNode, NodeType}) ->
+  io:format("rpc in ~p~n",[node()]),
+  gen_server:call({global,?RPL_SERVER},{addNode, NodeType}).
+
 %***********   FOR DEBUGGING    ************#
 deleteNode() ->
-  NodeList = ets:tab2list(nodeList),
+  NodeList = gen_server:call({global,?etsServer},{getAll,?locationEts}),
   exit(element(1, hd(NodeList)), rplExit).
 
 
@@ -257,3 +269,4 @@ sendGfxServerCrashAlert(Pid, Ref, Reason) ->
   %TODO - Uncomment this and check this
   %gen_server:call(?GFX_SERVER, {element(1, Reason), Pid, Ref, element(2, Reason)}),
   Pid.
+

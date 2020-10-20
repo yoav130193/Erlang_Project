@@ -16,9 +16,9 @@
 
 
 start_link({RootCount, Mop}) ->
-  gen_server:start_monitor({local, list_to_atom("root_server" ++ integer_to_list(RootCount))}, ?ROOT_SERVER, [{RootCount, Mop}], []);
+  gen_server:start_monitor({global, list_to_atom("root_server" ++ integer_to_list(RootCount))}, ?ROOT_SERVER, [{RootCount, Mop}], []);
 start_link({RootCount, OldVersion, Mop}) ->
-  gen_server:start_monitor({local, list_to_atom("root_server" ++ integer_to_list(RootCount))}, ?ROOT_SERVER, [{RootCount, Mop, OldVersion}], []).
+  gen_server:start_monitor({global, list_to_atom("root_server" ++ integer_to_list(RootCount))}, ?ROOT_SERVER, [{RootCount, Mop, OldVersion}], []).
 
 % INIT a new Root
 init([{RootCount, Mop}]) ->
@@ -39,13 +39,14 @@ init([{RootCount, Mop, OldVersion}]) ->
 
 % Got message from rplServer -> start to build the network
 handle_cast({buildNetwork}, {RootCount, Version, Mop}) ->
-  NodeList = ets:tab2list(nodeList),
+
+  NodeList =   gen_server:call({global,?etsServer},{getAll,?locationEts}),
   case hd(Mop) of
     ?NON_STORING ->
       put(?DOWNWARD_DIGRAPH, utils:buildVertexDigraph(NodeList));
     ?STORING ->
       io:format("STORING 87 DODAG_ID: ~p~n", [self()]),
-      ets:insert(?DOWNWARD_DIGRAPH, {self(), utils:buildVertexDigraph(NodeList)})
+      gen_server:call({global,?etsServer},{insert,?DOWNWARD_DIGRAPH, {self(), utils:buildVertexDigraph(NodeList)}})
   end,
   Rank = 0,
   put({?VERSION_RANK, self()}, {Version + 1, Rank}), % {Version, Rank}
@@ -77,7 +78,7 @@ handle_cast({daoAckMsg, From, DaoAckMsg}, {RootCount, Version, Mop}) ->
 
 % rplServer called this function, Each Root starts to build the digraph
 handle_cast({downwardDigraphBuild}, {RootCount, Version, Mop}) ->
-  NodeList = ets:tab2list(nodeList),
+  NodeList = gen_server:call({global,?etsServer},{getAll,?locationEts}),
   io:format("root number: ~p Starts Building Downward Digraph~n~n", [RootCount]),
   utils:requestParent(self(), self(), NodeList),
   {noreply, {RootCount, Version, Mop}};
@@ -103,10 +104,11 @@ handle_cast({giveParent, DodagID, From, ParentList}, {RootCount, Version, Mop}) 
       utils:deleteMessageFromEts(DodagID, self(), From, {finishedDigraphBuilding}, giveParentRoot),
       put(?DOWNWARD_DIGRAPH, NewDownwardDigraph);
     ?STORING ->
-      {_, DownwardDigraph} = hd(ets:lookup(?DOWNWARD_DIGRAPH, self())),  % Table = ?DOWNWARD_DIGRAPH , Key = DodagId
+      {_, DownwardDigraph} = hd(gen_server:call({global,?etsServer},{lookup,?DOWNWARD_DIGRAPH,self()})),
+      % Table = ?DOWNWARD_DIGRAPH , Key = DodagId
       NewDownwardDigraph = addParentsList(DownwardDigraph, From, ParentList, DodagID),
       utils:deleteMessageFromEts(DodagID, self(), From, {finishedDigraphBuilding}, giveParentRoot),
-      ets:insert(?DOWNWARD_DIGRAPH, {self(), NewDownwardDigraph})
+      gen_server:call({global,?etsServer},{insert,?DOWNWARD_DIGRAPH,{self(), NewDownwardDigraph}})
   end,
 
   {noreply, {RootCount, Version, Mop}};
@@ -120,7 +122,7 @@ handle_cast({parentMsg, From, To, DodagID, Msg, PathToRoot}, {RootCount, Version
       if
         To =:= MyPid ->
           io:format("Got the Msg ! ! ! DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p Path:~p ~n", [DodagID, self(), Msg, From, To, PathToRoot ++ [self()]]),
-          gen_server:reply(element(2, hd(ets:lookup(?RPL_REF, ref))), PathToRoot ++ [self()]);
+          gen_server:reply(element(2, hd(gen_server:call({global,?etsServer},{lookup,?RPL_REF,ref}))), PathToRoot ++ [self()]);
         true ->
           io:format("parentMsg - root, DodagID: ~p myNode: ~p msg: ~p, From: ~p, To: ~p, PathToRoot: ~p~n", [DodagID, self(), Msg, From, To, PathToRoot]),
           utils:startSendMessageDownward(From, To, Msg, DodagID, PathToRoot, Mop)
@@ -138,7 +140,7 @@ handle_cast({downwardMessage, From, To, Msg, DodagID, PathList, WholePath}, Stat
 
 
 handle_cast({getAllPath}, {RootCount, Version, Mop}) ->
-  NodeList = ets:tab2list(nodeList),
+  NodeList = gen_server:call({global,?etsServer},?locationEts),
   getAllPath(NodeList, Mop),
   {noreply, {RootCount, Version, Mop}}.
 
@@ -154,14 +156,14 @@ handle_call({hi}, From, State) ->
   {reply, cool, State};
 
 handle_call({sendMessageStoring, From, To, Msg}, OrderFrom, {RootCount, Version, Mop}) ->
-  ets:insert(?RPL_REF, {ref, OrderFrom}),
+  gen_server:call({global,?etsServer},{insert,?RPL_REF,{ref, OrderFrom}}),
   io:format("OrderFrom: ~p~n", [OrderFrom]),
   utils:sendMessageStoring(From, To, Msg, Mop),
   {noreply, {RootCount, Version, Mop}};
 
 
 handle_call({sendMessageNonStoring, From, To, Msg}, OrderFrom, {RootCount, Version, Mop}) ->
-  ets:insert(?RPL_REF, {ref, OrderFrom}),
+  gen_server:call({global,?etsServer},{insert,?RPL_REF,{ref, OrderFrom}}),
   io:format("OrderFrom: ~p~n", [OrderFrom]),
   utils:sendMessageNonStoring(From, To, Msg, Mop),
   {noreply, {RootCount, Version, Mop}};
@@ -188,7 +190,7 @@ getAllPath(NodeList, Mop) ->
     lists:foreach(fun(InElement) ->
       case hd(Mop) of
         ?STORING ->
-          {_, DownwardDigraph} = hd(ets:lookup(?DOWNWARD_DIGRAPH, self())),
+          {_, DownwardDigraph} = hd(gen_server:call({global,?etsServer},{lookup,?DOWNWARD_DIGRAPH,self()})),
           Vertices = digraph:get_short_path(DownwardDigraph, element(1, OutElement), element(1, InElement));
         ?NON_STORING ->
           Vertices = digraph:get_short_path(get(?DOWNWARD_DIGRAPH), element(1, OutElement), element(1, InElement))
@@ -212,7 +214,7 @@ addParentsList(DownwardDigraph, From, ParentList, DodagID) ->
 
 terminate(Reason, State) ->
   io:format("rootServer: ~p, terminate , Reason:~p, State: ~p~n", [self(), Reason, State]),
-  ets:delete(?NODE_LIST, self()),
-  ets:delete(?ROOT_LIST, self()),
+  gen_server:call({global,?etsServer},{delete,?NODE_LIST,self()}),
+  gen_server:call({global,?etsServer},{delete,?ROOT_LIST,self()}),
   script:checkLists(),
   exit({rootCrash, Reason, State}).
