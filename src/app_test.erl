@@ -16,7 +16,7 @@
 -export([start/1, start/0, isAlive/0, req_connect_nodes/0, req_start_app/0, startAndConnect/1,makeNodeMap/1,parseXML/0,lta/1,checkAllNodes/1]).
 
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3,startRun/0]).
 
 -define(mySERVER, ?MODULE).
 
@@ -287,6 +287,11 @@ checkAllNodes(_NodesList) ->
       gen_server:call({global,?etsServer},{deleteNodePid,?N_NODE});
     _ -> ok
   end.
+
+startRun() ->
+  startAndConnect(node()),
+  req_connect_nodes(),
+  req_start_app().
 
 
 
