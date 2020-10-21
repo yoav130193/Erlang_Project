@@ -84,9 +84,9 @@ handle_event(#wx{obj  = StartBtn, event = #wxCommand{type = command_button_click
       Argument = ?NON_STORING
   end,
   Response = case utils:getCorrectNodeToSpawn(gfx) of
-     ?R_NODE -> rpc:call('g_node@amirs-MacBook-Pro',rootWrapper,startRPL,[Argument]);
-     ?G_NODE -> rpc:call('r_node@amirs-MacBook-Pro',rplWrapper,startRPL,[Argument]);
-     ?N_NODE -> rpc:call('g_node@amirs-MacBook-Pro',nodeWrapper,startRPL,[Argument]);
+     ?R_NODE -> rpc:call(?R_NODE,rootWrapper,startRPL,[Argument]);
+     ?G_NODE -> rpc:call(?G_NODE,rplWrapper,startRPL,[Argument]);
+     ?N_NODE -> rpc:call(?N_NODE,nodeWrapper,startRPL,[Argument]);
      ?M_NODE -> rplServer:start_link(Argument)
   end ,
   io:format("start response ~p~n",[Response]),
@@ -462,9 +462,9 @@ handle_cast(_Msg, State) ->
 handle_info({'DOWN', Ref, process, Pid, {rplCrash, Reason, ProcState}}, State= #state{}) ->
   io:format("rplServer Monitor crash, Ref: ~p , Pid: ~p, Reason: ~p State: ~p~n", [Ref, Pid, Reason, ProcState]),
   case utils:getCorrectNodeToSpawn(gfx) of
-    ?R_NODE -> rpc:call('g_node@amirs-MacBook-Pro',rootWrapper,startRPL,[ProcState]);
-    ?G_NODE -> rpc:call('r_node@amirs-MacBook-Pro',rplWrapper,startRPL,[ProcState]);
-    ?N_NODE -> rpc:call('n_node@amirs-MacBook-Pro',nodeWrapper,startRPL,[ProcState]);
+    ?R_NODE -> rpc:call(?R_NODE,rootWrapper,startRPL,[ProcState]);
+    ?G_NODE -> rpc:call(?G_NODE,rplWrapper,startRPL,[ProcState]);
+    ?N_NODE -> rpc:call(?N_NODE,nodeWrapper,startRPL,[ProcState]);
     ?M_NODE -> rplServer:start_link(ProcState)
   end,
   io:format("RPL crashed, restarted RPL server~n"),
@@ -690,7 +690,7 @@ create(RootOrNode, State = #state{numOfRoots = NumOfRoots,
                  State#state{numOfNodes = NumOfNodes + 1}
              end,
   if
-    CreatedFirst == false -> gen_server:cast({global,'m_node@amirs-MacBook-Pro'},drawGFX);
+    CreatedFirst == false -> gen_server:cast({global,?M_NODE},drawGFX);
     true -> io:format("Created a new node,create flag= ~p~n",[CreatedFirst])
   end,
   FinalState = Midstate#state{createdFirst = true},

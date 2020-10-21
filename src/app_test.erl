@@ -289,6 +289,7 @@ checkAllNodes(_NodesList) ->
   end.
 
 startRun() ->
+  script:compileAll(),
   startAndConnect(node()),
   req_connect_nodes(),
   req_start_app().

@@ -56,9 +56,9 @@ handle_cast(_Request, State = #rootWrapper_state{}) ->
 handle_info({'DOWN', Ref, process, Pid, {Info, Reason, ProcState}}, State= #rootWrapper_state{}) ->
   io:format("rplServer Monitor crash, Ref: ~p , Pid: ~p, Info: ~p, Reason: ~p State: ~p~n", [Ref, Pid, Info, Reason, ProcState]),
   case utils:getCorrectNodeToSpawn(gfx) of
-    ?R_NODE -> rpc:call('r_node@amirs-MacBook-Pro',rootWrapper,startRPL,[ProcState]);
-    ?G_NODE -> rpc:call('g_node@amirs-MacBook-Pro',rplWrapper,startRPL,[ProcState]);
-    ?N_NODE -> rpc:call('n_node@amirs-MacBook-Pro',nodeWrapper,startRPL,[ProcState]);
+    ?R_NODE -> rpc:call(?R_NODE,rootWrapper,startRPL,[ProcState]);
+    ?G_NODE -> rpc:call(?G_NODE,rplWrapper,startRPL,[ProcState]);
+    ?N_NODE -> rpc:call(?N_NODE,nodeWrapper,startRPL,[ProcState]);
     ?M_NODE -> rplServer:start_link(ProcState)
   end,
   io:format("RPL crashed, restarted RPL server~n"),

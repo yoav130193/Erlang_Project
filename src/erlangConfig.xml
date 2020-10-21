@@ -1,9 +1,9 @@
 <?xml version="1.0"  encoding="UTF-8"?>
 <!DOCTYPE Nodes SYSTEM "erlangConfig.dtd">
     <Nodes>
-        <M_Node>m_node@amirs-MacBook-Pro</M_Node>
-        <G_Node>g_node@amirs-MacBook-Pro</G_Node>
-        <R_Node>r_node@amirs-MacBook-Pro</R_Node>
-        <N_Node>n_node@amirs-MacBook-Pro</N_Node>
+        <M_Node>m_node@172.20.10.2</M_Node>
+        <G_Node>g_node@172.20.10.12</G_Node>
+        <R_Node>r_node@172.20.10.12</R_Node>
+        <N_Node>n_node@172.20.10.2</N_Node>
     </Nodes>
 

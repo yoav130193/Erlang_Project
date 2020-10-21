@@ -48,10 +48,14 @@
 -define(decrement,-1).
 -define(radius,(?MapSize div 10)).
 -define(appEts,appEts).
--define(R_NODE,'r_node@amirs-MacBook-Pro').
--define(M_NODE,'m_node@amirs-MacBook-Pro').
--define(G_NODE,'g_node@amirs-MacBook-Pro').
--define(N_NODE,'n_node@amirs-MacBook-Pro').
+-define(R_NODE,'r_node@172.20.10.12').
+-define(M_NODE,'m_node@172.20.10.2').
+-define(G_NODE,'g_node@172.20.10.12').
+-define(N_NODE,'n_node@172.20.10.2').
+%-define(M_NODE,'m_node@amirs-MacBook-Pro').
+%-define(G_NODE,'g_node@amirs-MacBook-Pro').
+%-define(R_NODE,'r_node@amirs-MacBook-Pro').
+%-define(N_NODE,'n_node@amirs-MacBook-Pro').
 
 -record(daoAckMsg, {rplInstanceId, d = 2#1, reserved = 2#0000000, daoSequence, status = 16#01, dodagId, updateType}).
 -record(daoMsg, {rplInstanceId, k = 2#1, d = 2#1, flags = 8#00, reserved = 16#00, daoSequence, dodagId, updateType}).
