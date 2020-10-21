@@ -13,14 +13,14 @@
 -behaviour(gen_server).
 
 %% API
--export([start/1, start/0, isAlive/0, req_connect_nodes/0, req_start_app/0, startAndConnect/1,makeNodeMap/1,parseXML/0,lta/1]).
+-export([start/1, start/0, isAlive/0, req_connect_nodes/0, req_start_app/0, startAndConnect/1,makeNodeMap/1,parseXML/0,lta/1,checkAllNodes/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -define(mySERVER, ?MODULE).
 
--record(appstate, {nodesList, activeNodes, gfx,etsServer, rplserver, name}).
+-record(appstate, {nodesList, activeNodes, gfx,etsServer, rplserver, name,interruptor}).
 
 
 
@@ -64,7 +64,7 @@ init(Name) ->
   NodeList = parseXML(),
   State = #appstate{activeNodes = [],nodesList = NodeList,gfx = false,rplserver = false,name = Name},
   ets:new(?appEts, [set, named_table, public]),
-  io:format("app finished init, nodes from XML ~p~n",[NodeList]),
+  io:format("app finished init with pid ~p, nodes from XML ~p~n",[self(),NodeList]),
   {ok, State}.
 
 %%--------------------------------------------------------------------
@@ -86,6 +86,10 @@ init(Name) ->
 handle_call(isalive,_From, State) ->
   {reply, alive, State};
 
+handle_call(checkConnections,_From, State=#appstate{nodesList = NodesList}) ->
+  checkAllNodes(NodesList),
+  {reply, ok, State};
+
 %% connect nodes to the application
 
 handle_call(connectNodes,_From, State=#appstate{nodesList = NodeList}) ->
@@ -97,25 +101,22 @@ handle_call(connectNodes,_From, State=#appstate{nodesList = NodeList}) ->
              end,
   {reply, ok, NewState};
 
-handle_call({addNode, root},_From, State=#appstate{}) ->
+handle_call({spawnRoot,RootCount,Mop},_From, State=#appstate{}) ->
   io:format("got addroot app~n"),
-  {_,{Pid,Ref}} = rpc:call('g_node@amirs-Macbook-Pro',rplServer,rpc_req,[{addNode, root}]),
+  {_,{Pid,Ref}} = rootServer:start_link({RootCount, Mop}),
+  gen_server:call({global,?etsServer},{insert,?nodeControlETS,{node(),Pid}}),
   {reply,{Pid,Ref},State};
 
-handle_call({addNode, node},_From, State=#appstate{}) ->
-  {_,{Pid,Ref}} = rpc:call('g_node@amirs-Macbook-Pro',rplServer,rpc_req,[{addNode, node}]),
-  %{_,{Pid,Ref}} = gen_server:call({global,?RPL_SERVER},{addNode, node}),
+handle_call({spawnNode,RootCount,Mop},_From, State=#appstate{}) ->
+  io:format("got addroot app~n"),
+  {_,{Pid,Ref}} = nodeServer:start_link({RootCount, Mop}),
+  gen_server:call({global,?etsServer},{insert,?nodeControlETS,{node(),Pid}}),
   {reply,{Pid,Ref},State};
 
 %% starting the graphics and request empty playground from the first node in queue-global
 
 handle_call(start_app,_From, State = #appstate{nodesList = [_H|_T],activeNodes = [Ah|At]}) ->
-
-  %cast(Node, Module, Function, Args)
-  %{Pid,Ref} = rpc:async_call('g_node@amirs-MacBook-Pro',rplServer,start_link,[?STORING]),
-  %io:format("rpc res: ~p~n",[{Pid,Ref}]),
-  %rpc:async_call('g_node@amirs-Macbook-Pro',gfx_server,start_global,['g_node@amirs-Macbook-Pro','g_node@amirs-Macbook-Pro']),
-  {reply,ok, State#appstate{gfx = true,etsServer = true,activeNodes = At ++ Ah}};
+  {reply,ok, State#appstate{gfx = true,etsServer = true,activeNodes = At ++ Ah,interruptor = nullptr}};
 
 handle_call({rpl,StoringMode},_From, State = #appstate{}) ->
   Res = rplServer:start_link(StoringMode),
@@ -137,9 +138,10 @@ handle_call(_Request, _From, State) ->
   {stop, Reason :: term(), NewState :: #appstate{}}).
 
 handle_cast(drawGFX,State) ->
-  spawn(interruptor,loop,[150]),
-  io:format("spaned interruptor for gfx_server~n"),
-  {noreply,State};
+  InterruptorPid = spawn(interruptor,loop,[150]),
+  io:format("spawned interruptor for gfx_server~n"),
+  NewState = State#appstate{interruptor = InterruptorPid},
+  {noreply,NewState};
 
 
 handle_cast(_Request, State) ->
@@ -159,6 +161,20 @@ handle_cast(_Request, State) ->
   {noreply, NewState :: #appstate{}} |
   {noreply, NewState :: #appstate{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #appstate{}}).
+
+handle_info({'DOWN', Ref, process, Pid, {gfxCrash, Reason = quit, ProcState}}, State= #appstate{interruptor = Interruptor}) ->
+  exit(Interruptor,normal),
+  io:format("Gfx exit, Pid: ~p, Info: ~p, Reason: ~p State: ~p~n", [Ref, Pid, Reason, ProcState]),
+  gfx_server:start_global(node(),ProcState),
+  io:format("restarted Gfx server~n"),
+  {noreply, State};
+handle_info({'DOWN', Ref, process, Pid, {gfxCrash, Reason, ProcState}}, State= #appstate{interruptor = Interruptor}) ->
+  exit(Interruptor,normal),
+  io:format("Gfx server crash , Pid: ~p, Info: ~p, Reason: ~p State: ~p~n", [Ref, Pid, Reason, ProcState]),
+  gfx_server:start_global(node(),ProcState),
+  io:format("restarted Gfx server~n"),
+  {noreply, State};
+
 handle_info(_Info, State) ->
   {noreply, State}.
 
@@ -175,9 +191,7 @@ handle_info(_Info, State) ->
 %%--------------------------------------------------------------------
 -spec(terminate(Reason :: (normal | shutdown | {shutdown, term()} | term()),
     State :: #appstate{}) -> term()).
-terminate(_Reason, _State) ->
-  ok.
-
+terminate(Reason, State) -> exit({Reason,State}).
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
@@ -252,3 +266,28 @@ makeNodeMap(ActiveNodes) ->
   makeNodeMap(tl(ActiveNodes)).
 
 lta(List) -> list_to_atom(List).
+
+checkAllNodes(_NodesList) ->
+
+  GnodeStats = global:whereis_name(rplWrapper),
+  RnodeStats = global:whereis_name(rootWrapper),
+  NnodeStats = global:whereis_name(nodeWrapper),
+  case GnodeStats of
+    undefined  ->
+      gen_server:call({global,?etsServer},{deleteNodePid,?G_NODE});
+    _ -> ok
+  end,
+  case RnodeStats of
+    undefined  ->
+      gen_server:call({global,?etsServer},{deleteNodePid,?R_NODE});
+    _ -> ok
+  end,
+  case NnodeStats of
+    undefined  ->
+      gen_server:call({global,?etsServer},{deleteNodePid,?N_NODE});
+    _ -> ok
+  end.
+
+
+
+

@@ -58,6 +58,7 @@ init([_Mode,_Node]) ->
   ets:new(?MSG_TABLE, [set, named_table, public]),
   ets:new(?RPL_REF, [set, named_table, public]),
   ets:new(?DOWNWARD_DIGRAPH, [set, named_table, public]),
+  ets:new(?nodeControlETS, [bag, named_table, public]),
   io:format("Finished ETS server init ~n"),
   NewState = #etsState{started = true},
   %gfx_server:start_global('g_node@amirs-Macbook-Pro'),
@@ -101,8 +102,31 @@ handle_call({deleteAll,TableName},_From,State = #etsState{}) ->
   {reply, ok, State};
 
 handle_call({insert,TableName,{Key,Value}},_From,State = #etsState{}) ->
-  ets:insert(TableName,{Key,Value}),
+  Reply = ets:insert(TableName,{Key,Value}),
+  {reply, Reply, State};
+
+handle_call(restartAll,_From,State = #etsState{}) ->
+  ets:delete_all_objects(?pidStringEts),
+  ets:delete_all_objects(?ROOT_LIST),
+  ets:delete_all_objects(?locationEts),
+  ets:delete_all_objects(?nodeControlETS),
+  ets:delete_all_objects(?MSG_TABLE),
+  ets:delete_all_objects(?RPL_REF),
+  ets:delete_all_objects(?DOWNWARD_DIGRAPH),
   {reply, ok, State};
+
+handle_call({deleteNodePid,Node},_From,State = #etsState{}) ->
+  List = ets:lookup(?nodeControlETS,Node),
+  PidList = [Y || {_X,Y} <- List],
+  lists:foreach(
+    fun(E) ->
+      ets:delete(?locationEts,E),
+      ets:insert(?nodePidsEts,[{X,Y} || {X,Y} <- ets:tab2list(?nodePidsEts), Y =/= E]),
+      ets:delete(?pidStringEts,E),
+      ets:delete(?ROOT_LIST,E)
+    end, PidList),
+  ets:delete(?nodeControlETS,Node),
+  {reply,ok,State};
 
 handle_call(_Request, _From, State = #etsState{}) ->
 {reply, ok, State}.

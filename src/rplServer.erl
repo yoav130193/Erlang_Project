@@ -22,9 +22,8 @@
   rpcReq/1,
   printData/1]).
 
-start_link(Mop) ->
-  io:format("entered rpc ~n"),
-  gen_server:start_link({global,?RPL_SERVER}, ?RPL_SERVER, [Mop], []).
+start_link(State = #rplServerData{}) -> gen_server:start_link({global,?RPL_SERVER}, ?RPL_SERVER, [State], []);
+start_link(Mop) -> gen_server:start_link({global,?RPL_SERVER}, ?RPL_SERVER, [Mop], []).
 %start_link(Mop) -> gen_server:start_link({global, ?RPL_SERVER}, ?RPL_SERVER, [Mop,global], []).
 
 
@@ -32,6 +31,12 @@ start_link(Mop) ->
 %*****************   Initialization    ***************%
 
 % Initialize all information to start the program
+
+init(State = #rplServerData{}) ->
+  io:format("restarting RPL in ~p with state: ~n~p~n",[node(),State]),
+  {ok,State};
+
+
 init(Mop) ->
 % FOR DEBUG ONLY
   {ok, S} = file:open(?LOG_FILE_NAME, [write]),
@@ -58,14 +63,17 @@ init(Mop) ->
 % Call from the GUI - addition of a new node
 % Return to the GUI the Pid of the new node
 handle_call({addNode, node}, _From, Data) ->
-  %{_, Pid} = nodeServer:start_link({Data#rplServerData.nodeCount, Data#rplServerData.mop}),
-  {_, {Pid, Ref}} = gen_server:call({global,nodeWrapper},{spawnNode,Data#rplServerData.nodeCount, Data#rplServerData.mop}),
- % {_, {Pid, Ref}} = nodeServer:start_link({Data#rplServerData.nodeCount, Data#rplServerData.mop}),
-
-%  Pid = 0, Ref = 0,
-%  {_, {Pid, Ref}} = rpc:call(?NODE_1, ?NODE_SERVER, start_link, [{Data#rplServerData.nodeCount, Data#rplServerData.mop}]),
+  {Pid, Ref} = case utils:getCorrectNodeToSpawn({rpl,node}) of
+                      ?R_NODE ->
+                        gen_server:call({global,rootWrapper},{spawnNode,Data#rplServerData.nodeCount, Data#rplServerData.mop});
+                      ?G_NODE ->
+                        gen_server:call({global,rplWrapper},{spawnNode,Data#rplServerData.nodeCount, Data#rplServerData.mop});
+                      ?N_NODE ->
+                        gen_server:call({global,nodeWrapper},{spawnNode,Data#rplServerData.nodeCount, Data#rplServerData.mop});
+                      ?M_NODE ->
+                        gen_server:call({global,?APP_SERVER},{spawnNode,Data#rplServerData.nodeCount, Data#rplServerData.mop})
+                    end,
   io:format("rplserver wants to add a normal node: ~p~n", [Pid]),
- % ets:insert(?NODE_LIST, {Pid, {Ref, hd(Data#rplServerData.randomLocationList), hd(tl(Data#rplServerData.randomLocationList))}}),
   NewData = updateData(Data#rplServerData.nodeCount + 1, Data#rplServerData.rootCount,
     tl(tl(Data#rplServerData.randomLocationList)), Data#rplServerData.msg_id, Data#rplServerData.messageList, Data#rplServerData.mop),
   {reply, {Pid, Ref}, NewData};
@@ -75,7 +83,16 @@ handle_call({addNode, node}, _From, Data) ->
 handle_call({addNode, root}, _From, Data) ->
   io:format("rplserver wants to add a root node~n"),
   % {spawnRoot,RootCount,Mop}
-  {_, {Pid, Ref}} = gen_server:call({global,rootWrapper},{spawnRoot,Data#rplServerData.rootCount, Data#rplServerData.mop}),
+  {Pid, Ref} = case utils:getCorrectNodeToSpawn({rpl,root}) of
+                      ?R_NODE ->
+                        gen_server:call({global,rootWrapper},{spawnRoot,Data#rplServerData.rootCount, Data#rplServerData.mop});
+                      ?G_NODE ->
+                        gen_server:call({global,rplWrapper},{spawnRoot,Data#rplServerData.rootCount, Data#rplServerData.mop});
+                      ?N_NODE ->
+                        gen_server:call({global,nodeWrapper},{spawnRoot,Data#rplServerData.rootCount, Data#rplServerData.mop});
+                      ?M_NODE ->
+                        gen_server:call({global,?APP_SERVER},{spawnRoot,Data#rplServerData.rootCount, Data#rplServerData.mop})
+                    end,
   %{_, {Pid, Ref}} = rootServer:start_link({Data#rplServerData.rootCount, Data#rplServerData.mop}),
 %  ets:insert(?NODE_LIST, {Pid, {Ref, hd(Data#rplServerData.randomLocationList), hd(tl(Data#rplServerData.randomLocationList))}}),
   %ets:insert(?ROOT_LIST, {Pid, {Ref, hd(Data#rplServerData.randomLocationList), hd(tl(Data#rplServerData.randomLocationList))}}),

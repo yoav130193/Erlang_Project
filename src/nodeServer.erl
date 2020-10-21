@@ -19,7 +19,7 @@ start_link({NodeCount, Mop}) ->
   gen_server:start_monitor({global, list_to_atom("node_server" ++ integer_to_list(NodeCount))}, ?NODE_SERVER, [{NodeCount, Mop}], []).
 
 init([{NodeCount, Mop}]) ->
-  io:format("new node: ~p :)~n", [self()]),
+  io:format("new node: ~p~n", [self()]),
   process_flag(trap_exit, true),
   {ok, {NodeCount, Mop}}.
 

@@ -23,7 +23,9 @@
          handle_cast/2,
          handle_event/2,
          handle_sync_event/3,
-         start_global/1]).
+         start_global/1,
+         start_global/2
+]).
 -include_lib("wx/include/wx.hrl").
 -include("include/header.hrl").
 
@@ -34,8 +36,11 @@
 % brief - starts gfx application in global mode
 % param - Node on which the gfx server runs on
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+start_global(_Node,ProcState) ->
+  io:format("Gfx server starting in global mode~n"),
+  wx_object:start_link({global,?MyServer},?MODULE,[ProcState],[]).
 start_global(Node) ->
-  io:format("entered  start_global~n"),
+  io:format("Gfx server starting in global mode~n"),
   wx_object:start_link({global,?MyServer},?MODULE,[global,Node],[]).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % brief - starts gfx application in local mode
@@ -47,6 +52,10 @@ start(Node) ->
 % brief - initializes the wx_object
 % param - Node = the node the object will run on, Mode = local || global
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+init(State = #state{}) ->
+  gen_server:cast({global,?APP_SERVER},drawGFX),
+  {State#state.frame,State};
+
 init([Mode,Node]) ->
   process_flag(trap_exit, true),
   ets:new(?pathEts,[set, named_table, public]),
@@ -59,6 +68,7 @@ init([Mode,Node]) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 handle_sync_event(#wx{event=#wxPaint{}}, _, State) ->
+  gen_server:call({global,?M_NODE},checkConnections),
   draw(State),
   ok.
 
@@ -69,11 +79,16 @@ handle_event(#wx{obj  = StartBtn, event = #wxCommand{type = command_button_click
   Flag = wxCheckBox:isChecked(StoringCheckBox),
   if
     Flag == true ->
-
-      Response = rpc:call('g_node@amirs-MacBook-Pro',rplWrapper,startRPL,[?STORING]);
+      Argument = ?STORING;
     true ->
-      Response = rpc:call('g_node@amirs-MacBook-Pro',rplWrapper,startRPL,[?NON_STORING])
+      Argument = ?NON_STORING
   end,
+  Response = case utils:getCorrectNodeToSpawn(gfx) of
+     ?R_NODE -> rpc:call('g_node@amirs-MacBook-Pro',rootWrapper,startRPL,[Argument]);
+     ?G_NODE -> rpc:call('r_node@amirs-MacBook-Pro',rplWrapper,startRPL,[Argument]);
+     ?N_NODE -> rpc:call('g_node@amirs-MacBook-Pro',nodeWrapper,startRPL,[Argument]);
+     ?M_NODE -> rplServer:start_link(Argument)
+  end ,
   io:format("start response ~p~n",[Response]),
   wxButton:disable(StartBtn),
   {noreply,State};
@@ -308,11 +323,13 @@ handle_event(#wx{event=#wxMouse{type = left_down}=_Vec}, State = #state{}) -> {n
 %% send Message event
 handle_event(#wx{obj = SendMsgBtn, event = #wxCommand{type = command_button_clicked}},
     State = #state{sendMsg = SendMsgBtn,src = Src,destinations = Destinations,msg = MsgTextBox,
-      msgID = MsgId}) ->
+      storing_checkbox = StoringCheckBox,msgID = MsgId}) ->
   Msg = wxTextCtrl:getLabel(MsgTextBox),
   DestinationsList = maps:to_list(Destinations),
   OutputList = [Y || {_X,Y} <- DestinationsList],
   io:format("destination ~p~n",[OutputList]),
+  comCheck(StoringCheckBox),
+  gen_server:call({global,?M_NODE},checkConnections),
   case length(OutputList) of
     0 -> {noreply,State};
     1 ->
@@ -367,19 +384,13 @@ handle_event(#wx{event = #wxClose{}},State = #state{panel = Panel}) ->
 %handle_event(#wx{event=#wxClose{type=close_window}},State = #state{frame = Frame,panel = Panel}) ->
   wxPanel:destroy(Panel),
   io:format("Exiting~n"),
-  io:format("self = ~p~n",[self()]),
-  exit(self()),
-  io:format("killed self~n"),
+  exit(self(),quit),
   {stop,normal,State};
 
-handle_event(#wx{obj = QuitBtn, event = #wxClose{type = command_combobox_selected}},
+handle_event(#wx{obj = QuitBtn, event = #wxClose{type = command_button_clicked}},
     State = #state{quit = QuitBtn,frame = Frame,panel = Panel}) ->
-  wxPanel:destroy(Panel),
-  wxFrame:destroy(Frame),
-  wxWindow:close(Frame),
-  io:format("Exiting~n"),
-  init:stop(),
-  {stop,normal,State};
+  exit(self(),quit);
+
 
 %%create root event
 handle_event(#wx{obj = NewRootBtn, event = #wxCommand{type = command_button_clicked}},
@@ -448,16 +459,15 @@ handle_cast(_Msg, State) ->
   {noreply,State}.
 
 % Handle falls from root or Node Server
-handle_info({'DOWN', Ref, process, Pid, {Info, Reason, ProcState}}, State= #state{storing_checkbox = StoringCheckBox}) ->
-  io:format("rplServer Monitor crash, Ref: ~p , Pid: ~p, Info: ~p, Reason: ~p State: ~p~n", [Ref, Pid, Info, Reason, ProcState]),
-  Flag = wxCheckBox:isChecked(StoringCheckBox),
-  if
-    Flag == true ->
-      Response = rpc:call('g_node@amirs-MacBook-Pro',rplWrapper,startRPL,[?STORING]);
-    true ->
-      Response = rpc:call('g_node@amirs-MacBook-Pro',rplWrapper,startRPL,[?NON_STORING])
+handle_info({'DOWN', Ref, process, Pid, {rplCrash, Reason, ProcState}}, State= #state{}) ->
+  io:format("rplServer Monitor crash, Ref: ~p , Pid: ~p, Reason: ~p State: ~p~n", [Ref, Pid, Reason, ProcState]),
+  case utils:getCorrectNodeToSpawn(gfx) of
+    ?R_NODE -> rpc:call('g_node@amirs-MacBook-Pro',rootWrapper,startRPL,[ProcState]);
+    ?G_NODE -> rpc:call('r_node@amirs-MacBook-Pro',rplWrapper,startRPL,[ProcState]);
+    ?N_NODE -> rpc:call('n_node@amirs-MacBook-Pro',nodeWrapper,startRPL,[ProcState]);
+    ?M_NODE -> rplServer:start_link(ProcState)
   end,
-  io:format("start response ~p~n",[Response]),
+  io:format("RPL crashed, restarted RPL server~n"),
   {noreply, State};
 
 handle_info(_Info, State) ->
@@ -465,12 +475,11 @@ handle_info(_Info, State) ->
 code_change(_, _, State) ->
   {stop, ignore, State}.
 
-terminate(_Reason, _) ->
+terminate(Reason, State) ->
   %whereis(?APP_SERVER)!{gfxTerminate,self(),_Reason},
   io:format("entered terminate ~n"),
   wx:destroy(),
-  ok.
-
+  exit({gfxCrash, Reason, State}).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Local functions
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -507,7 +516,7 @@ integer_to_string(Integer) when is_integer(Integer) ->
 
 init_layout(Mode,Node) ->
   Wx = wx:new(),
-  Frame = wxFrame:new(Wx,-1,"RPL Simulation",[{size,{?MapSize + 600,?MapSize}}]),
+  Frame = wxFrame:new(Wx,-1,"RPL Simulation",[{size,{?MapSize + 600,?MapSize + 50}}]),
   Panel = wxPanel:new(Frame,[{size,{?MapSize,?MapSize}},{style,?wxFULL_REPAINT_ON_RESIZE}]),
   %io:format("color is ~p~n",[?wxBLUE]),
   wxPanel:setBackgroundColour(Panel,?wxSheikBlue),
@@ -624,7 +633,7 @@ init_layout(Mode,Node) ->
   wxListBox:connect(Node_list_q_3,command_listbox_selected),
   wxListBox:connect(Node_list_q_4,command_listbox_selected),
   wxComboBox:connect(MovementChooser, command_combobox_selected),
-  wxButton:connect(QuitBtn,command_combobox_selected),
+  wxButton:connect(QuitBtn,command_button_clicked),
   %% config ui for start of run %%
   wxButton:disable(SendMsgBtn),
   wxButton:disable(NewNodeBtn),
@@ -651,7 +660,7 @@ init_layout(Mode,Node) ->
   }.
 
 create(RootOrNode, State = #state{numOfRoots = NumOfRoots,
-  numOfNodes = NumOfNodes,createdFirst = CreatedFirst})  ->
+  numOfNodes = NumOfNodes,createdFirst = CreatedFirst,storing_checkbox = StoringCheckBox})  ->
   {Func,Type} = case State#state.moveType of
                   "Random" -> {random,random};
                   "Polynomial" -> {funcGenerator:generatePolynom(1,[]),polynomial};
@@ -664,17 +673,18 @@ create(RootOrNode, State = #state{numOfRoots = NumOfRoots,
                       polynomial -> getStartingPos(Func,Type,X,RootOrNode, State);
                       sinusoidal -> getStartingPos(Func,Type,X,RootOrNode, State)
                     end,
+  comCheck(StoringCheckBox),
   Midstate = case RootOrNode of
                root ->
                  %{Pid,Ref} = gen_server:call(?APP_SERVER, {addNode, root}),
-                 {_,{Pid,Ref}} = gen_server:call({global,rplServer},{addNode,root}),
+                 {Pid,Ref} = gen_server:call({global,rplServer},{addNode,root}),
                  %{Pid,Ref} = rpc:call('g_node@amirs-MacBook-Pro',rplWrapper,rpcReq,[{addNode, root}]),
                  gen_server:call({global,?etsServer},{insert,?nodePidsEts,{nodePid,Pid}}),
                  gen_server:call({global,?etsServer},{insert,?locationEts,{Pid,{Ref,NumOfRoots,RootOrNode,Func,Type,?incerement,{FinalX,FinalY},normal}}}),
                  gen_server:call({global,?etsServer},{insert,?ROOT_LIST,{Pid, {Ref,FinalX,FinalY}}}),
                  State#state{numOfRoots = NumOfRoots + 1};
                node ->
-                 {_,{Pid1,Ref1}} = gen_server:call({global,rplServer},{addNode,node}),
+                 {Pid1,Ref1} = gen_server:call({global,rplServer},{addNode,node}),
                  gen_server:call({global,?etsServer},{insert,?nodePidsEts,{nodePid,Pid1}}),
                  gen_server:call({global,?etsServer},{insert,?locationEts,{Pid1,{Ref1,NumOfRoots,RootOrNode,Func,Type,?incerement,{FinalX,FinalY},normal}}}),
                  State#state{numOfNodes = NumOfNodes + 1}
@@ -757,6 +767,7 @@ drawPath(PathList,Panel) when is_tuple(PathList) ->
   wxClientDC:drawLine(Paint,{Xs,Ys},{Xd,Yd}),
   wxClientDC:destroy(Paint).
 
+update(_Panel,[],Q1,Q2,Q3,Q4) -> {Q1,Q2,Q3,Q4};
 update(Panel,[{Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y},MsgRole}}|[]],Q1,Q2,Q3,Q4) ->
   %[{Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y},MsgRole}}] = gen_server:call({global,?etsServer},{lookup,?locationEts,Pid}),
   {NewX,NewY} = updateLocation({Pid,{_Ref,_NumOfRoots,NodeType,_Func,_Type,_Direction,{X,Y},MsgRole}}),
@@ -1020,7 +1031,37 @@ getSinusoidalCoordinates(Func,Direction,X) ->
 transformXtoT(X) -> X - 350.
 transformTtoX(T) -> T + 350.
 
-test() ->
-  io:format("entered test~n"),
-  wx_object:call({global,?MyServer},test).
- % spawn_link('g_node@amirs-MacBook-Pro',gfx_server,start_global,['g_node@amirs-MacBook-Pro']).
+comCheck(StoringCheckBox) ->
+  io:format("comCheck:: ~p~n",[global:whereis_name(?RPL_SERVER)]),
+  case global:whereis_name(?RPL_SERVER) of
+     undefined ->
+       Flag = wxCheckBox:isChecked(StoringCheckBox),
+       if
+         Flag == true ->
+           Argument = ?STORING;
+         true ->
+           Argument = ?NON_STORING
+       end,
+        Reply = case utils:getCorrectNodeToSpawn(gfx) of
+                    ?R_NODE ->
+                      gen_server:call({global, rootWrapper},{startRPL,Argument}),
+                      %rpc:call('g_node@amirs-MacBook-Pro',rootWrapper,startRPL,[Argument]),
+                      io:format("comCheck:: ~p~n",[global:whereis_name(rplServer)]);
+                    ?G_NODE ->
+                      gen_server:call({global, rplWrapper},{startRPL,Argument}),
+                      %rpc:call('r_node@amirs-MacBook-Pro',rplWrapper,startRPL,[Argument]),
+                        io:format("comCheck:: ~p~n",[global:whereis_name(rplServer)]);
+                    ?N_NODE ->
+                      gen_server:call({global, nodeWrapper},{startRPL,Argument}),
+                      %rpc:call('n_node@amirs-MacBook-Pro',nodeWrapper,startRPL,[Argument]),
+                      io:format("comCheck:: ~p~n",[global:whereis_name(rplServer)]);
+
+                    ?M_NODE ->
+                     % gen_server:call({global, rootWrapper},{startRPL,Argument}),
+                      global:unregister_name(rplServer),
+                      rplServer:start_link(Argument),
+                      io:format("comCheck:: ~p~n",[global:whereis_name(rplServer)])
+        end;
+    _ -> Reply = ok
+  end,
+  Reply.

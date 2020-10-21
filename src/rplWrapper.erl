@@ -26,12 +26,22 @@ init([]) ->
   {ok, #rplWrapper_state{}}.
 
 handle_call({spawnRoot,RootCount,Mop}, _From, State = #rplWrapper_state{}) ->
-  {Pid,Ref} = rootServer:start_link({RootCount, Mop}),
-  {reply, {ok,{Pid,Ref}}, State};
+  {_,{Pid,Ref}}  = rootServer:start_link({RootCount, Mop}),
+  gen_server:call({global,?etsServer},{insert,?nodeControlETS,{node(),Pid}}),
+  {reply, {Pid,Ref}, State};
 
 handle_call({spawnNode,NodeCount,Mop}, _From, State) ->
-  {Pid, Ref} = nodeServer:start_link({NodeCount, Mop}),
-  {reply,{ok, {Pid, Ref}},State};
+  {_,{Pid,Ref}}  = nodeServer:start_link({NodeCount, Mop}),
+  gen_server:call({global,?etsServer},{insert,?nodeControlETS,{node(),Pid}}),
+  {reply,{Pid, Ref},State};
+
+handle_call({startRPL,Mop},_From,State = #rplWrapper_state{}) ->
+  Reply = rplServer:start_link(Mop),
+  {reply,Reply,State};
+
+
+handle_call(isalive,_From, State) ->
+  {reply, alive, State};
 
 handle_call(_Request, _From, State = #rplWrapper_state{}) ->
   {reply, ok, State}.
@@ -48,6 +58,16 @@ handle_cast({addNode,root}, State = #rplWrapper_state{}) ->
 handle_cast(_Request, State = #rplWrapper_state{}) ->
   {noreply, State}.
 
+handle_info({'DOWN', Ref, process, Pid, {Info, Reason, ProcState}}, State= #rplWrapper_state{}) ->
+  io:format("rplServer Monitor crash, Ref: ~p , Pid: ~p, Info: ~p, Reason: ~p State: ~p~n", [Ref, Pid, Info, Reason, ProcState]),
+  case utils:getCorrectNodeToSpawn(gfx) of
+    ?R_NODE -> rpc:call('r_node@amirs-MacBook-Pro',rootWrapper,startRPL,[ProcState]);
+    ?G_NODE -> rpc:call('g_node@amirs-MacBook-Pro',rplWrapper,startRPL,[ProcState]);
+    ?N_NODE -> rpc:call('n_node@amirs-MacBook-Pro',nodeWrapper,startRPL,[ProcState]);
+    ?M_NODE -> rplServer:start_link(ProcState)
+  end,
+  io:format("RPL crashed, restarted RPL server~n"),
+  {noreply, State};
 handle_info(_Info, State = #rplWrapper_state{}) ->
   {noreply, State}.
 

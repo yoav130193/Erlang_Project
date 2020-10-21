@@ -31,6 +31,7 @@
 -define(locationEts,nodeList).
 -define(nodePidsEts,nodePidsEts).
 -define(pidStringEts,pidStringEts).
+-define(nodeControlETS,nodeControlEts).
 -define(pathEts,pathEts).
 -define(MapSize, 750).
 -define(GridMapSize,?MapSize div 2).
@@ -48,7 +49,8 @@
 -define(radius,(?MapSize div 10)).
 -define(appEts,appEts).
 -define(R_NODE,'r_node@amirs-MacBook-Pro').
--defgine(G_NODE,'g_node@amirs-MacBook-Pro').
+-define(M_NODE,'m_node@amirs-MacBook-Pro').
+-define(G_NODE,'g_node@amirs-MacBook-Pro').
 -define(N_NODE,'n_node@amirs-MacBook-Pro').
 
 -record(daoAckMsg, {rplInstanceId, d = 2#1, reserved = 2#0000000, daoSequence, status = 16#01, dodagId, updateType}).

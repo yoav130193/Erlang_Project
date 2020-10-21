@@ -15,7 +15,7 @@
 -export([findMeAndNeighbors/1, handleDownwardMessage/6, findNeighbors/2,
   checkIfUpdateNeeded/4, requestParent/3, buildVertexDigraph/1, sendMessageNonStoring/4,
   sendMessageStoring/4, deleteMessageFromEts/5, getDodagList/0, calculatePath/3, startSendMessageDownward/6,
-  checkNode/1]).
+  checkNode/1,getCorrectNodeToSpawn/1]).
 
 
 %**************   FIND FRIENDS   **************%
@@ -222,10 +222,73 @@ deleteMessageFromEts(DodagId, From, To, Action, WhereFrom) ->
       continue
   end.
 
-checkNode(Node) ->
-  Nodes = nodes(),
-  [X || X <-lists:map(fun(E) -> E == Node end,Nodes) , X == true].
+checkNode(Node) -> net_adm:ping(Node).
+  %Nodes = nodes(),
+  %[X || X <-lists:map(fun(E) -> E == Node end,Nodes) , X == true].
 
+getCorrectNodeToSpawn(gfx) ->
+ case checkNode(?G_NODE) of
+    pong ->
+      io:format("spawning rpl server in ~p~n",[?G_NODE]),
+      ?G_NODE;
+    _ ->
+      case checkNode(?R_NODE) of
+          pong ->
+            io:format("spawning rpl server in ~p~n",[?R_NODE]),
+            ?R_NODE;
+          _ ->
+            case checkNode(?N_NODE) of
+               pong ->
+                 io:format("spawning rpl server in ~p~n",[?N_NODE]),
+                 ?N_NODE;
+               _ ->
+                 io:format("spawning rpl server in ~p~n",[?M_NODE]),
+                 ?M_NODE
+            end
+      end
+ end;
 
+getCorrectNodeToSpawn({rpl,root}) ->
+  case checkNode(?R_NODE) of
+    pong ->
+      io:format("spawning root in ~p~n",[?R_NODE]),
+      ?R_NODE;
+    _ ->
+      case checkNode(?N_NODE) of
+        pong->
+          io:format("spawning root in ~p~n",[?N_NODE]),
+          ?N_NODE;
+        _ ->
+          case checkNode(?G_NODE) of
+            pong ->
+              io:format("spawning root in ~p~n",[?G_NODE]),
+              ?G_NODE;
+            _ ->
+              io:format("spawning root in ~p~n",[?M_NODE]),
+              ?M_NODE
+          end
+      end
+  end;
 
+getCorrectNodeToSpawn({rpl,node}) ->
+  case checkNode(?N_NODE) of
+    pong ->
+      io:format("spawning node in ~p~n",[?N_NODE]),
+      ?N_NODE;
+    _ ->
+      case checkNode(?R_NODE) of
+        pong ->
+          io:format("spawning node in ~p~n",[?R_NODE]),
+          ?R_NODE;
+        _ ->
+          case checkNode(?G_NODE) of
+            pong ->
+              io:format("spawning node in ~p~n",[?G_NODE]),
+              ?G_NODE;
+            _ ->
+              io:format("spawning node in ~p~n",[?M_NODE]),
+              ?M_NODE
+          end
+      end
+  end.
 
