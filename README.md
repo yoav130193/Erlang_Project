@@ -40,7 +40,8 @@ Our project offfers an different interpetation of the R.P.L  communication prot
 
 <!-- GETTING STARTED -->
 ## Getting Started
-
+The git offers 2 impelemtations of the design, one done locally and the other in a distributed fashion. 
+before getting started, you must choose which one you want to run, and then continue.
 Open folder and terminal for the 'master' node, open a folder and terminal for each one of the submasters.
 in each terimnal write:
 ```sh
