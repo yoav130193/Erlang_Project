@@ -77,7 +77,6 @@ wrapper:start_link.
 
 * Choose whether you want the R.P.L server to work in storing or non-stroring mode, once you have chosen either of them, press the "start" button on the GUI.
 * start spawning Nodes/roots.
-* write on the terminal app:draw(.)
 * choose a source node for sending a message
 * choose Destination nodes, however many as you want.
 * write in the text box the message to send.
