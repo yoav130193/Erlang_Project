@@ -32,6 +32,7 @@ Our project offfers an different interpetation of the R.P.L  communication prot
 * Distributed BFS
 * Shortest Path Between Two Vertices (Bellman Ford)
 * communication between many different and independent modules
+* video of a sample of running the project can be found here: https://youtu.be/teE5jcW7z0M
 
 
 ### Built With
@@ -40,8 +41,9 @@ Our project offfers an different interpetation of the R.P.L  communication prot
 
 <!-- GETTING STARTED -->
 ## Getting Started
-The git offers 2 impelemtations of the design, one done locally and the other in a distributed fashion. 
+The git offers 2 impelemtations of the design, one done locally (on 4 terminals) and the other in a distributed fashion. 
 before getting started, you must choose which one you want to run, and then continue.
+open 4 terminals and create 4 4 erlang nodes with the names m_node,g_node,r_node,n_node, once you've done that,
 Open folder and terminal for the 'master' node, open a folder and terminal for each one of the submasters.
 in each terimnal write:
 ```sh
